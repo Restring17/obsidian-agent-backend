@@ -1,6 +1,6 @@
 # obsidian-agent-backend
 
-> 🚧 **Work in progress.** Follow the progress on the [project board](https://github.com/users/Restring17/projects) and in the [milestones](../../milestones).
+> 🚧 **Work in progress.** Follow the progress on the [project board](https://github.com/users/Restring17/projects/2) and in the [milestones](../../milestones).
 
 Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: you capture and decide, and the tooling collects facts, keeps them structured and writes a weekly review.
 
