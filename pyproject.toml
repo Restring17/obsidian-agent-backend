@@ -1,0 +1,100 @@
+[project]
+name = "obsidian-agent-backend"
+version = "0.1.0.dev0"
+description = "Turn an Obsidian vault into a backend for AI agents: a deterministic daily collector and a least-privilege weekly review."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Adrian Ramírez" }]
+requires-python = ">=3.12"
+dependencies = ["PyYAML>=6.0.2"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Repository = "https://github.com/Restring17/obsidian-agent-backend"
+Issues = "https://github.com/Restring17/obsidian-agent-backend/issues"
+
+[project.scripts]
+oab-collect = "obsidian_agent_backend.cli:collect_main"
+oab-review = "obsidian_agent_backend.cli:review_main"
+
+# PEP 735 group: `uv run` installs it by default, so `uv run pytest` works on a clean clone.
+[dependency-groups]
+dev = [
+    "bandit>=1.8",
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+    "ruff>=0.11",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+# --- Tooling -----------------------------------------------------------------
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",  # pycodestyle
+    "F",       # pyflakes
+    "I",       # isort
+    "B",       # bugbear
+    "UP",      # pyupgrade
+    "SIM",     # simplify
+    "C4",      # comprehensions
+    "PTH",     # pathlib
+    "RUF",
+    "S",       # bandit rules
+    "N",       # naming
+    "PL",      # pylint
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--import-mode=importlib",
+    "--cov=obsidian_agent_backend",
+    "--cov-branch",
+    "--cov-report=term-missing",
+    "--cov-fail-under=90",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["obsidian_agent_backend"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]

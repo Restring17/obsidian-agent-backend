@@ -23,6 +23,19 @@ Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: 
 - Mutation testing (`mutmut`) every week.
 - Static analysis: `ruff`, `mypy`, `bandit`; secret scanning with `gitleaks`.
 
+## Development
+
+Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
+
+```sh
+uv sync                    # create .venv with the dev tools
+uv run pytest              # tests + branch coverage (fails under 90 %)
+uv run ruff check          # lint
+uv run mypy                # strict type checking
+uv run bandit -c pyproject.toml -r src
+uv tool install .          # exposes oab-collect and oab-review
+```
+
 ## Contributing
 
 The workflow (Scrumban sprints, GitFlow branches and Conventional Commits) is described in [CONTRIBUTING.md](CONTRIBUTING.md).
