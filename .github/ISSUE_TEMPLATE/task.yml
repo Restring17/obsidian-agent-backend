@@ -1,0 +1,38 @@
+name: Task
+description: A unit of work for the backlog (feature, chore, docs, CI…)
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Why this is needed and what it touches.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What to do, as a short checklist.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of Done
+      description: Verifiable criteria (commands that must pass, behavior to observe).
+      value: |
+        - [ ] Tests cover success and edge cases (branch coverage ≥ 90 %)
+        - [ ]
+    validations:
+      required: true
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who can implement it?
+      options:
+        - An AI coding agent (ready-for-agent)
+        - A person (ready-for-human)
+    validations:
+      required: true
