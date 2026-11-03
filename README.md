@@ -52,6 +52,28 @@ The tool computes the week's data (metrics per day with totals, AI log, vault co
 
 Notes whose frontmatter has `private: true` (the key is configurable) are left out of the data.
 
+## Scheduling
+
+`oab-timers` runs both commands for you with **systemd user timers** (Linux), with no cron and no root:
+
+```sh
+oab-timers print                  # show the four unit files, change nothing
+oab-timers install                # write them to ~/.config/systemd/user and enable them
+systemctl --user list-timers 'oab-*'
+oab-timers uninstall              # disable both timers and remove the files
+```
+
+- `oab-collect.timer` runs every day at 09:00 and collects yesterday plus the two previous days.
+- `oab-review.timer` runs every Monday at 09:30. It first refreshes the metrics of the past 8 days; if that fails, the review still runs.
+- Both timers have `Persistent=true`: when the PC was off at that time, the run happens at the next boot.
+- Times are in the **vault timezone** from `oab.toml`, not the system one. Change them with `--collect-at` and `--review-at`, which take [systemd calendar expressions](https://www.freedesktop.org/software/systemd/man/latest/systemd.time.html#Calendar%20Events) such as `"Mon..Fri *-*-* 07:30"`.
+- `--no-github` makes the daily collector skip GitHub.
+- The services get a minimal `PATH`: the folders of `oab-*`, `git`, `gh` and `claude` found at install time, plus the system folders. Re-run `oab-timers install` if you move them.
+- The units are checked with `systemd-analyze --user verify` before anything is written. `install` and `uninstall` only replace or remove files they generated (marked with a header comment); use `--force` to replace your own.
+- Logs: `journalctl --user -u oab-collect -u oab-review`.
+
+To pause without uninstalling, run `systemctl --user disable --now oab-collect.timer oab-review.timer`. The units are templates in [`src/obsidian_agent_backend/systemd/`](src/obsidian_agent_backend/systemd), so you can also install them by hand.
+
 ## Status
 
 | Milestone | Goal |
@@ -79,7 +101,7 @@ uv run ruff check          # lint
 uv run mypy                # strict type checking
 uv run bandit -c pyproject.toml -r src
 uv run mutmut run          # mutation testing (about a minute); see docs/mutation-testing.md
-uv tool install .          # exposes oab-collect and oab-review
+uv tool install .          # exposes oab-collect, oab-review and oab-timers
 ```
 
 ## Contributing

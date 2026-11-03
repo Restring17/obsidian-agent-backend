@@ -1,0 +1,11 @@
+$marker
+[Unit]
+Description=obsidian-agent-backend: daily metrics into the daily note
+Documentation=$docs
+
+[Service]
+Type=oneshot
+Environment=$path
+# Yesterday and the two days before: catches up after a weekend with the PC off.
+ExecStart=$collect --days 3
+Nice=10

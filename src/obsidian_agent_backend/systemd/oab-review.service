@@ -1,0 +1,14 @@
+$marker
+[Unit]
+Description=obsidian-agent-backend: weekly review with a least-privilege agent
+Documentation=$docs
+
+[Service]
+Type=oneshot
+Environment=$path
+# Fresh metrics for the whole past week first; "-" lets the review run even if this fails.
+ExecStartPre=-$collect --days 8
+ExecStart=$review
+# The agent alone may take up to 15 minutes.
+TimeoutStartSec=30min
+Nice=10

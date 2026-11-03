@@ -26,6 +26,7 @@ Issues = "https://github.com/Restring17/obsidian-agent-backend/issues"
 [project.scripts]
 oab-collect = "obsidian_agent_backend.cli:collect_main"
 oab-review = "obsidian_agent_backend.cli:review_main"
+oab-timers = "obsidian_agent_backend.cli:timers_main"
 
 # PEP 735 group: `uv run` installs it by default, so `uv run pytest` works on a clean clone.
 [dependency-groups]

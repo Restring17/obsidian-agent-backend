@@ -1,0 +1,13 @@
+$marker
+[Unit]
+Description=obsidian-agent-backend: weekly review of the previous ISO week
+Documentation=$docs
+
+[Timer]
+OnCalendar=$review_at
+# Runs at the next boot when the PC was off at that time.
+Persistent=true
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target
