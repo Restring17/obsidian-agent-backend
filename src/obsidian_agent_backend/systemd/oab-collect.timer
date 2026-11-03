@@ -1,0 +1,13 @@
+$marker
+[Unit]
+Description=obsidian-agent-backend: collect metrics every day
+Documentation=$docs
+
+[Timer]
+OnCalendar=$collect_at
+# Runs at the next boot when the PC was off at that time.
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target
