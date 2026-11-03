@@ -18,6 +18,6 @@ Try it on a copy, since both commands write into the vault and commit:
 ```sh
 cp -r examples/vault /tmp/oab-demo && cd /tmp/oab-demo
 git init -q && git add . && git commit -qm "example vault"
-oab-collect --no-github --date 2026-10-28 --dry-run
+oab-collect --no-github --date 2026-10-27 --dry-run
 oab-review --week 2026-W44 --dry-run
 ```
