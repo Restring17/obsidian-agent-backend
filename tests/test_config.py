@@ -7,6 +7,7 @@ from obsidian_agent_backend.config import (
     ApplicationsConfig,
     Config,
     ConfigError,
+    ProjectsConfig,
     load_config,
     parse_config,
 )
@@ -413,3 +414,59 @@ def test_applications_active_values_are_normalised() -> None:
     config = parse({"applications": {"note": "A.md", "active": [" Applied ", "INTERVIEW"]}})
     assert config.applications is not None
     assert config.applications.active == ("applied", "interview")
+
+
+# --- review extensions (#5) ------------------------------------------------------
+
+
+def test_review_defaults() -> None:
+    config = parse({})
+    assert config.daily_notes.log_heading == "AI log"
+    assert config.human_zone.private_field == "private"
+    assert config.projects is None
+    assert config.review.prompt is None
+
+
+def test_review_keys_are_loaded() -> None:
+    config = parse(
+        {
+            "daily_notes": {"log_heading": "Registro IA"},
+            "human_zone": {"private_field": "privado"},
+            "projects": {"folder": "20 Proyectos", "status_field": "estado"},
+            "review": {"prompt": "90 Agentes/prompt.md"},
+        }
+    )
+    assert config.daily_notes.log_heading == "Registro IA"
+    assert config.human_zone.private_field == "privado"
+    assert config.projects == ProjectsConfig(
+        folder=PurePosixPath("20 Proyectos"), status_field="estado"
+    )
+    assert config.review.prompt == PurePosixPath("90 Agentes/prompt.md")
+
+
+def test_projects_status_field_defaults_to_status() -> None:
+    config = parse({"projects": {"folder": "Projects"}})
+    assert config.projects is not None
+    assert config.projects.status_field == "status"
+
+
+@pytest.mark.parametrize("heading", ["", " AI log", "AI log ", "## AI log", "a\nb", "x" * 65])
+def test_invalid_log_heading(heading: str) -> None:
+    assert "must be one line of heading text" in error_of({"daily_notes": {"log_heading": heading}})
+
+
+@pytest.mark.parametrize(
+    ("data", "message"),
+    [
+        ({"human_zone": {"private_field": "a b"}}, "human_zone.private_field: 'a b' is not"),
+        ({"projects": {"status_field": "status"}}, "projects.folder is required"),
+        ({"projects": {"folder": "../x"}}, "must not contain '..'"),
+        ({"projects": {"folder": "P", "status_field": ""}}, "projects.status_field: '' is not"),
+        ({"projects": {"folder": "P", "owner": "me"}}, "unknown key(s): projects.owner"),
+        ({"projects": "P"}, "[projects] must be a table"),
+        ({"review": {"prompt": "prompt.txt"}}, "review.prompt must be a Markdown file"),
+        ({"review": {"prompt": "/etc/prompt.md"}}, "must be relative to the vault"),
+    ],
+)
+def test_invalid_review_keys(data: dict[str, Any], message: str) -> None:
+    assert message in error_of(data)

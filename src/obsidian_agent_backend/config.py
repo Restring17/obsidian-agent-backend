@@ -25,6 +25,8 @@ DEFAULT_CONFIG_NAME = "oab.toml"
 
 FIELD_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
 # A Dataview inline value such as ``applied`` in ``[status:: applied]``.
+# A Markdown heading text such as ``AI log`` (without the leading ``#``).
+HEADING = re.compile(r"^[^#\s][^\n]{0,63}$")
 FIELD_VALUE = re.compile(r"^[^\[\]\n]{1,64}$")
 # Aliases (``sonnet``) and full ids (``claude-sonnet-5-5``, ``sonnet[1m]``). The value is
 # passed as a single argv item, never through a shell; the pattern keeps it to a plain token.
@@ -43,12 +45,14 @@ class ConfigError(Exception):
 class DailyNotesConfig:
     folder: PurePosixPath
     template: PurePosixPath | None
+    log_heading: str
 
 
 @dataclass(frozen=True, slots=True)
 class HumanZoneConfig:
     folders: tuple[str, ...]
     exclude: tuple[str, ...]
+    private_field: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,8 +73,15 @@ class ApplicationsConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectsConfig:
+    folder: PurePosixPath
+    status_field: str
+
+
+@dataclass(frozen=True, slots=True)
 class ReviewConfig:
     model: str
+    prompt: PurePosixPath | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +93,7 @@ class Config:
     agent: AgentConfig
     metrics: MetricsConfig
     applications: ApplicationsConfig | None
+    projects: ProjectsConfig | None
     review: ReviewConfig
 
     def in_human_zone(self, relative: PurePosixPath) -> bool:
@@ -135,18 +147,27 @@ def parse_config(data: Table, vault: Path) -> Config:
     _check_keys(
         data,
         "",
-        {"timezone", "daily_notes", "human_zone", "agent", "metrics", "applications", "review"},
+        {
+            "timezone",
+            "daily_notes",
+            "human_zone",
+            "agent",
+            "metrics",
+            "applications",
+            "projects",
+            "review",
+        },
     )
     daily = _table(data, "daily_notes")
-    _check_keys(daily, "daily_notes", {"folder", "template"})
+    _check_keys(daily, "daily_notes", {"folder", "template", "log_heading"})
     zone = _table(data, "human_zone")
-    _check_keys(zone, "human_zone", {"folders", "exclude"})
+    _check_keys(zone, "human_zone", {"folders", "exclude", "private_field"})
     agent = _table(data, "agent")
     _check_keys(agent, "agent", {"folder"})
     metrics = _table(data, "metrics")
     _check_keys(metrics, "metrics", {"manual"})
     review = _table(data, "review")
-    _check_keys(review, "review", {"model"})
+    _check_keys(review, "review", {"model", "prompt"})
 
     template = daily.get("template")
     agent_folder = _folder(_string(agent, "folder", "Agents", prefix="agent"), "agent.folder")
@@ -165,15 +186,26 @@ def parse_config(data: Table, vault: Path) -> Config:
             template=None
             if template is None
             else _note(_string(daily, "template", prefix="daily_notes"), "daily_notes.template"),
+            log_heading=_heading(_string(daily, "log_heading", "AI log", prefix="daily_notes")),
         ),
         human_zone=HumanZoneConfig(
             folders=_patterns(zone, "folders", ["*"]),
             exclude=_patterns(zone, "exclude", [], allow_empty=True),
+            private_field=_field(
+                _string(zone, "private_field", "private", prefix="human_zone"),
+                "human_zone.private_field",
+            ),
         ),
         agent=AgentConfig(folder=agent_folder),
         metrics=MetricsConfig(manual=_metric_keys(metrics)),
         applications=_applications(data),
-        review=ReviewConfig(model=_model(_string(review, "model", "sonnet", prefix="review"))),
+        projects=_projects(data),
+        review=ReviewConfig(
+            model=_model(_string(review, "model", "sonnet", prefix="review")),
+            prompt=None
+            if review.get("prompt") is None
+            else _note(_string(review, "prompt", prefix="review"), "review.prompt"),
+        ),
     )
 
 
@@ -285,9 +317,7 @@ def _applications(data: Table) -> ApplicationsConfig | None:
     _check_keys(table, "applications", {"note", "field", "active"})
     if "note" not in table:
         raise ConfigError("applications.note is required when [applications] is present")
-    field = _string(table, "field", "status", prefix="applications")
-    if not FIELD_NAME.match(field):
-        raise ConfigError(f"applications.field: {field!r} is not a valid Dataview field name")
+    field = _field(_string(table, "field", "status", prefix="applications"), "applications.field")
     return ApplicationsConfig(
         note=_note(_string(table, "note", prefix="applications"), "applications.note"),
         field=field,
@@ -305,6 +335,35 @@ def _active_values(table: Table) -> tuple[str, ...]:
             raise ConfigError(f"applications.active: {item!r} is not a valid field value")
         values.append(item.strip().casefold())
     return tuple(values)
+
+
+def _projects(data: Table) -> ProjectsConfig | None:
+    if "projects" not in data:
+        return None
+    table = _table(data, "projects")
+    _check_keys(table, "projects", {"folder", "status_field"})
+    if "folder" not in table:
+        raise ConfigError("projects.folder is required when [projects] is present")
+    return ProjectsConfig(
+        folder=_folder(_string(table, "folder", prefix="projects"), "projects.folder"),
+        status_field=_field(
+            _string(table, "status_field", "status", prefix="projects"), "projects.status_field"
+        ),
+    )
+
+
+def _field(name: str, key: str) -> str:
+    if not FIELD_NAME.match(name):
+        raise ConfigError(f"{key}: {name!r} is not a valid Dataview field name")
+    return name
+
+
+def _heading(text: str) -> str:
+    if not HEADING.match(text) or text != text.strip():
+        raise ConfigError(
+            f"daily_notes.log_heading: {text!r} must be one line of heading text without '#'"
+        )
+    return text
 
 
 def _model(name: str) -> str:

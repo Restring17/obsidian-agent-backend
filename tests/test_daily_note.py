@@ -4,7 +4,15 @@ from pathlib import Path
 import pytest
 
 from obsidian_agent_backend.config import Config, parse_config
-from obsidian_agent_backend.daily_note import DailyNote, NoteError, atomic_write, merge_frontmatter
+from obsidian_agent_backend.daily_note import (
+    DailyNote,
+    NoteError,
+    append_log,
+    atomic_write,
+    log_lines,
+    merge_frontmatter,
+    read_frontmatter,
+)
 from obsidian_agent_backend.domain import Metrics
 
 DAY = date(2026, 11, 2)
@@ -129,3 +137,55 @@ def test_atomic_write_cleans_up_when_replace_fails(
         atomic_write(path, "new")
     assert path.read_text(encoding="utf-8") == "old"
     assert [p.name for p in tmp_path.iterdir()] == ["note.md"]
+
+
+# --- log section and frontmatter reader (#5) ------------------------------------
+
+
+def test_read_frontmatter() -> None:
+    assert read_frontmatter("---\na: 1\nb: x\n---\nbody") == {"a": 1, "b": "x"}
+    assert read_frontmatter("---\n1: one\n---\n") == {"1": "one"}
+
+
+@pytest.mark.parametrize(
+    "text", ["no frontmatter", "---\na: [\n---\n", "---\n- x\n---\n", "---\n---\n"]
+)
+def test_read_frontmatter_never_raises(text: str) -> None:
+    assert read_frontmatter(text) == {}
+
+
+def test_log_lines_reads_only_list_items_of_the_section() -> None:
+    text = "# Day\n## AI log\n- one\ntext\n  - two\n## Notes\n- not log\n"
+    assert log_lines(text, "AI log") == ["- one", "- two"]
+    assert log_lines(text, "Missing") == []
+    assert log_lines("## AI log\n- last\n", "AI log") == ["- last"]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("# Day", "# Day\n\n## AI log\n- new\n"),
+        ("# Day\n## AI log\n", "# Day\n## AI log\n- new\n"),
+        ("## AI log\n- old\n\n\n", "## AI log\n- old\n- new\n"),
+        ("## AI log\n- old\n\n## Notes\nx\n", "## AI log\n- old\n- new\n\n## Notes\nx\n"),
+        ("## AI log  \n# Next\n", "## AI log  \n- new\n\n# Next\n"),
+        ("### AI log\n- deeper\n", "### AI log\n- deeper\n\n## AI log\n- new\n"),
+    ],
+)
+def test_append_log(text: str, expected: str) -> None:
+    assert append_log(text, "AI log", "- new") == expected
+
+
+@pytest.mark.parametrize("line", ["", "  ", "a\nb", "a\rb"])
+def test_append_log_rejects_invalid_lines(line: str) -> None:
+    with pytest.raises(NoteError, match="single non-empty line"):
+        append_log("", "AI log", line)
+
+
+def test_log_creates_the_note_and_keeps_metrics(tmp_path: Path) -> None:
+    note = DailyNote(make_config(tmp_path, template=None))
+    note.update(DAY, Metrics({"vault_commits": 2}), "t")
+    path = note.log(DAY, "- [oab-review] done")
+    assert path.read_text(encoding="utf-8") == (
+        '---\nvault_commits: 2\ncollected_at: "t"\n---\n\n## AI log\n- [oab-review] done\n'
+    )
