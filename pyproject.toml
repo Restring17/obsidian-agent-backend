@@ -31,6 +31,7 @@ oab-review = "obsidian_agent_backend.cli:review_main"
 [dependency-groups]
 dev = [
     "bandit>=1.8",
+    "mutmut>=3.3",
     "mypy>=1.15",
     "pytest>=8.3",
     "pytest-cov>=6.0",
@@ -71,7 +72,7 @@ select = [
 [tool.mypy]
 strict = true
 python_version = "3.12"
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -101,3 +102,10 @@ exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
+
+# Mutation testing (weekly in .github/workflows/mutation.yml). Results: docs/mutation-testing.md.
+[tool.mutmut]
+source_paths = ["src/obsidian_agent_backend/"]
+also_copy = ["examples/", "oab.example.toml", "scripts/"]
+# Coverage only slows mutant runs down; the threshold is checked by the normal suite.
+pytest_add_cli_args = ["--no-cov", "-p", "no:cacheprovider", "-q"]

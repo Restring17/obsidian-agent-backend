@@ -57,7 +57,7 @@ def test_daily_metrics_table_totals_and_log(tmp_path: Path) -> None:
     write(
         tmp_path / "00 Home/Daily/2026-11-02.md",
         "---\ngithub_commits: 3\ngym_min: 60\nvault_commits: x\ntasks_completed: true\n---\n"
-        "## AI log\n- did A\n",
+        "## AI log\n- did A\n- did B\n",
     )
     write(tmp_path / "00 Home/Daily/2026-11-04.md", "---\ngithub_commits: 2\ngym_min: 30.5\n---\n")
     write(tmp_path / "00 Home/Daily/2026-11-09.md", "---\ngithub_commits: 99\n---\n")  # next week
@@ -75,7 +75,10 @@ def test_daily_metrics_table_totals_and_log(tmp_path: Path) -> None:
     assert lines[4] == "| 2026-11-03 | — | — | — | — | — | — | — |"
     assert lines[5] == "| [[2026-11-04]] | 2 | — | — | — | — | — | 30.5 |"
     assert "| **Total** | 5 | — | — | — | — | — | 90.5 |" in lines
-    assert section(text, "AI log of the week").splitlines()[1:] == ["- 2026-11-02: did A"]
+    assert section(text, "AI log of the week").splitlines()[1:] == [
+        "- 2026-11-02: did A",
+        "- 2026-11-02: did B",
+    ]
 
 
 def test_empty_week(tmp_path: Path) -> None:
@@ -101,6 +104,26 @@ def test_commits_use_the_week_bounds_and_are_capped(tmp_path: Path) -> None:
     assert "- abc99 " in commits
     assert "abc100" not in commits
     assert commits.rstrip().endswith("(+5 more)")
+
+
+def test_a_few_commits_are_listed_without_a_remainder(tmp_path: Path) -> None:
+    runner = FakeRunner("abc1 2026-11-02 one\nabc2 2026-11-03 two\n")
+    text = WeeklyContext(make_config(tmp_path), runner).build(WEEK)
+    assert section(text, "Vault commits").rstrip("\n") == (
+        "## Vault commits (2)\n- abc1 2026-11-02 one\n- abc2 2026-11-03 two"
+    )
+
+
+def test_exactly_the_cap_of_commits_has_no_remainder(tmp_path: Path) -> None:
+    runner = FakeRunner("".join(f"abc{i} 2026-11-02 commit {i}\n" for i in range(100)))
+    text = WeeklyContext(make_config(tmp_path), runner).build(WEEK)
+    assert section(text, "Vault commits (100)").rstrip().endswith("- abc99 2026-11-02 commit 99")
+
+
+def test_exactly_the_cap_of_tasks_has_no_remainder(tmp_path: Path) -> None:
+    write(tmp_path / "10 Notes/a.md", "".join(f"- [ ] task {i}\n" for i in range(40)))
+    tasks = section(WeeklyContext(make_config(tmp_path), FakeRunner()).build(WEEK), "Open tasks")
+    assert tasks.rstrip().endswith("- task 39 ([[a]])")
 
 
 def test_open_tasks_skip_private_excluded_and_agent_notes(tmp_path: Path) -> None:

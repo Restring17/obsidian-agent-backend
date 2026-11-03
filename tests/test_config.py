@@ -121,8 +121,21 @@ def test_missing_file_is_reported(tmp_path: Path) -> None:
 
 
 def test_directory_is_reported_as_unreadable(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="cannot read"):
+    with pytest.raises(ConfigError) as exc:
         load_config(tmp_path)
+    assert str(exc.value) == f"cannot read {tmp_path}: Is a directory"
+
+
+def test_read_error_without_description_names_the_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise PermissionError
+
+    monkeypatch.setattr(Path, "open", fail)
+    with pytest.raises(ConfigError) as exc:
+        load_config(tmp_path / "oab.toml")
+    assert str(exc.value) == f"cannot read {tmp_path / 'oab.toml'}: PermissionError"
 
 
 def test_invalid_toml_reports_location(tmp_path: Path) -> None:
@@ -181,6 +194,19 @@ def test_sections_must_be_tables(section: str) -> None:
         ({"review": {"model": 4}}, "review.model must be a string"),
         ({"applications": {"note": 1}}, "applications.note must be a string"),
         ({"applications": {"note": "a.md", "field": 1}}, "applications.field must be a string"),
+        ({"daily_notes": {"log_heading": 1}}, "daily_notes.log_heading must be a string"),
+        ({"human_zone": {"private_field": 1}}, "human_zone.private_field must be a string"),
+        ({"review": {"prompt": 1}}, "review.prompt must be a string"),
+        ({"projects": {"folder": 1}}, "projects.folder must be a string"),
+        (
+            {"projects": {"folder": "P", "status_field": 1}},
+            "projects.status_field must be a string",
+        ),
+        # Path errors name the key too.
+        ({"daily_notes": {"folder": " "}}, "daily_notes.folder must not be empty"),
+        ({"projects": {"folder": ""}}, "projects.folder must not be empty"),
+        ({"review": {"prompt": ""}}, "review.prompt must not be empty"),
+        ({"projects": {}}, "projects.folder is required when [projects] is present"),
     ],
 )
 def test_wrong_types_are_rejected(data: dict[str, Any], message: str) -> None:

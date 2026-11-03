@@ -1,3 +1,4 @@
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -88,9 +89,9 @@ def test_symlinked_daily_folder_outside_the_vault_is_refused(tmp_path: Path) -> 
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("no frontmatter\n", "has no frontmatter"),
-        ("---\nb: [\n---\n", "not valid YAML"),
-        ("---\n- item\n---\n", "not valid YAML"),
+        ("no frontmatter\n", "^the note has no frontmatter$"),
+        ("---\nb: [\n---\n", "^the resulting frontmatter is not valid YAML$"),
+        ("---\n- item\n---\n", "^the resulting frontmatter is not valid YAML$"),
         ("---\na: |\n  text\n---\n", "could not be updated safely"),  # becomes "1 text"
         ("---\na: 1\na: 2\n---\n", "could not be updated safely"),  # YAML keeps the last
     ],
@@ -113,15 +114,37 @@ def test_merge_does_not_confuse_prefixed_keys() -> None:
 
 
 def test_merge_with_no_values_on_empty_frontmatter_is_not_a_mapping() -> None:
-    with pytest.raises(NoteError, match="not a mapping"):
+    with pytest.raises(NoteError, match=r"^the resulting frontmatter is not a mapping$"):
         merge_frontmatter("---\n---\n", {})
 
 
 def test_atomic_write_leaves_no_temporary_file(tmp_path: Path) -> None:
-    path = tmp_path / "sub/note.md"
+    path = tmp_path / "a/b/note.md"
     atomic_write(path, "hello\r\n")
     assert path.read_bytes() == b"hello\r\n"
     assert [p.name for p in path.parent.iterdir()] == ["note.md"]
+
+
+def test_atomic_write_uses_a_hidden_temporary_file_next_to_the_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Same folder: the final rename is atomic. Hidden and not .md: Obsidian and the
+    # collector never pick it up as a note.
+    created: list[Path] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def spy(**kwargs: str) -> tuple[int, str]:
+        fd, name = real_mkstemp(**kwargs)  # type: ignore[call-overload]
+        created.append(Path(name))
+        return fd, name
+
+    monkeypatch.setattr(tempfile, "mkstemp", spy)
+    path = tmp_path / "note.md"
+    atomic_write(path, "hello")
+    [temp] = created
+    assert temp.parent == tmp_path
+    assert temp.name.startswith(".oab-")
+    assert temp.suffix == ".tmp"
 
 
 def test_atomic_write_cleans_up_when_replace_fails(
@@ -170,6 +193,11 @@ def test_log_lines_reads_only_list_items_of_the_section() -> None:
         ("## AI log\n- old\n\n## Notes\nx\n", "## AI log\n- old\n- new\n\n## Notes\nx\n"),
         ("## AI log  \n# Next\n", "## AI log  \n- new\n\n# Next\n"),
         ("### AI log\n- deeper\n", "### AI log\n- deeper\n\n## AI log\n- new\n"),
+        # Only blank lines are trimmed: trailing spaces (a Markdown line break) stay.
+        ("Line break  \n", "Line break  \n\n## AI log\n- new\n"),
+        ("Fixed X\n", "Fixed X\n\n## AI log\n- new\n"),
+        ("## AI log\n- old  \n", "## AI log\n- old  \n- new\n"),
+        ("## AI log\n- fixed X\n", "## AI log\n- fixed X\n- new\n"),
     ],
 )
 def test_append_log(text: str, expected: str) -> None:
@@ -178,7 +206,7 @@ def test_append_log(text: str, expected: str) -> None:
 
 @pytest.mark.parametrize("line", ["", "  ", "a\nb", "a\rb"])
 def test_append_log_rejects_invalid_lines(line: str) -> None:
-    with pytest.raises(NoteError, match="single non-empty line"):
+    with pytest.raises(NoteError, match=r"^a log entry must be a single non-empty line$"):
         append_log("", "AI log", line)
 
 

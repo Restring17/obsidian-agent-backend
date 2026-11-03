@@ -1,4 +1,5 @@
 import argparse
+import time
 from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from pathlib import Path
@@ -254,3 +255,115 @@ def test_collect_defaults_to_the_current_time(
     yesterday = datetime.now(LIMA).date().toordinal() - 1
     [line] = capsys.readouterr().out.splitlines()
     assert line.startswith(date.fromordinal(yesterday).isoformat())
+
+
+# --- help, flags and boundaries (found by mutation testing) ------------------------
+
+HELP: dict[str, list[str]] = {
+    "oab-collect": [
+        "Write exact daily metrics to the daily note frontmatter.",
+        "config file at the vault root (default: ./oab.toml)",
+        "day to collect (default: yesterday)",
+        "also collect the N-1 previous days (1-31, default 1)",
+        "do not query GitHub",
+        "print metrics, write nothing",
+    ],
+    "oab-review": [
+        "Write the weekly review with a least-privilege agent.",
+        "ISO week YYYY-Www (default: last week)",
+        "override review.model",
+        "write a '(test)' report, no log or commit",
+        "redo the report if it exists",
+        "print the prompt without calling the model",
+    ],
+}
+
+
+@pytest.mark.parametrize(("prog", "entry"), COMMANDS)
+def test_help_documents_every_option(
+    prog: str,
+    entry: EntryPoint,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("COLUMNS", "200")  # no line wrapping
+    with pytest.raises(SystemExit) as exc:
+        entry(["--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "--config PATH" in out
+    assert prog == "oab-review" or "--days N" in out
+    # Each text must be the whole description of its option (the end of a line).
+    lines = [line.strip() for line in out.splitlines()]
+    assert [
+        text
+        for text in HELP[prog]
+        if not any(line.endswith(f" {text}") or line == text for line in lines)
+    ] == []
+
+
+@pytest.mark.parametrize(
+    ("args", "message"),
+    [
+        (["--week", "2026-45"], "argument --week: invalid week (use YYYY-Www): '2026-45'"),
+        (["--model", "a b"], "argument --model: invalid model name: 'a b'"),
+    ],
+)
+def test_review_argument_errors_explain_the_problem(
+    args: list[str], message: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        cli.review_main(args)
+    assert capsys.readouterr().err.endswith(f"oab-review: error: {message}\n")
+
+
+def test_collect_accepts_today(vault: Path) -> None:
+    args = ["--config", str(vault / "oab.toml"), "--no-github", "--date", "2026-11-03"]
+    assert cli.collect_main([*args, "--dry-run"], now=NOW) == 0
+
+
+def test_review_accepts_the_week_that_starts_today(vault: Path) -> None:
+    monday = datetime(2026, 11, 2, 9, 0, tzinfo=LIMA)
+    args = ["--config", str(vault / "oab.toml"), "--week", "2026-W45", "--dry-run"]
+    assert cli.review_main(args, now=monday) == 0
+
+
+def test_review_test_flag_targets_the_test_report(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args = ["--config", str(vault / "oab.toml"), "--test", "--dry-run"]
+    assert cli.review_main(args, now=NOW) == 0
+    assert "`90 Agents/Reports/2026-W44 Weekly review (test).md`" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("force", "called"), [([], False), (["--force"], True)])
+def test_review_force_flag_redoes_an_existing_report(
+    vault: Path, force: list[str], called: bool
+) -> None:
+    report = vault / "90 Agents/Reports/2026-W44 Weekly review.md"
+    report.parent.mkdir(parents=True)
+    report.write_text("old\n", encoding="utf-8")
+    seen: list[list[str]] = []
+
+    def agent(cmd: Sequence[str], cwd: Path | None) -> str:
+        seen.append(list(cmd))
+        return ""
+
+    cli.review_main(["--config", str(vault / "oab.toml"), *force], now=NOW, agent_runner=agent)
+    assert bool(seen) is called
+
+
+def test_review_today_follows_the_vault_timezone(
+    vault: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Sunday 22:00 in Lima is already Monday in UTC: "last week" must follow the vault.
+    sunday_night = datetime(2026, 11, 1, 22, 0, tzinfo=LIMA)
+    monkeypatch.setenv("TZ", "UTC")
+    time.tzset()
+    try:
+        args = ["--config", str(vault / "oab.toml"), "--dry-run"]
+        assert cli.review_main(args, now=sunday_night) == 0
+    finally:
+        monkeypatch.undo()
+        time.tzset()
+    assert "# Data for week 2026-W43" in capsys.readouterr().out

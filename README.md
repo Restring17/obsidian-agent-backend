@@ -63,7 +63,8 @@ Notes whose frontmatter has `private: true` (the key is configurable) are left o
 ## Quality bar
 
 - ≥ 90 % branch coverage, enforced in CI.
-- Mutation testing (`mutmut`) every week.
+- Mutation testing (`mutmut`) every Monday, non-blocking: score 98 %, every survivor reviewed in [docs/mutation-testing.md](docs/mutation-testing.md).
+- Dependabot opens weekly PRs into `develop` for Python packages and GitHub Actions.
 - Static analysis: `ruff`, `mypy`, `bandit`; secret scanning with `gitleaks`.
 
 ## Development
@@ -77,6 +78,7 @@ uv run pytest -m e2e       # end-to-end only: examples/vault, real git, fake gh 
 uv run ruff check          # lint
 uv run mypy                # strict type checking
 uv run bandit -c pyproject.toml -r src
+uv run mutmut run          # mutation testing (about a minute); see docs/mutation-testing.md
 uv tool install .          # exposes oab-collect and oab-review
 ```
 
