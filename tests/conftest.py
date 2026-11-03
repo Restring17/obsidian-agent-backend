@@ -24,7 +24,12 @@ def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every git process in the tests, the tool's included, ignores the user's config.
 
     CI runners have no git identity, so local runs must not depend on ~/.gitconfig either.
+
+    mutmut runs the suite from ``mutants/`` inside this repository. A mutant that drops
+    the vault ``cwd`` would then commit to the project's own branch, so git must not look
+    above the folder that holds ``tests/`` (the ceiling is that folder's parent).
     """
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(Path(__file__).resolve().parents[2]))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_SYSTEM", os.devnull)
     for role in ("AUTHOR", "COMMITTER"):

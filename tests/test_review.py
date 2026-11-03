@@ -6,15 +6,16 @@ from typing import Any
 
 import pytest
 
+from obsidian_agent_backend import review
 from obsidian_agent_backend.config import Config, parse_config
 from obsidian_agent_backend.daily_note import DailyNote, NoteError
+from obsidian_agent_backend.exact_commit import changed_paths
 from obsidian_agent_backend.review import (
     PromptInputs,
     ReviewError,
     ReviewOptions,
     WeeklyReview,
     build_prompt,
-    changed_paths,
     claude_command,
     load_template,
     report_path,
@@ -329,18 +330,136 @@ def test_test_run_writes_no_log_and_no_commit(vault: Path, git: Git) -> None:
     assert git(vault, "log", "--oneline").count("\n") == 1
 
 
-def test_nothing_to_commit_is_fine(vault: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    reviewer, out, _ = make_review(vault, writer())
-    monkeypatch.setattr(DailyNote, "log", lambda self, day, line: Path())
+def test_nothing_to_commit_is_fine(vault: Path, git: Git, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
-    def no_staged(cmd: Sequence[str], cwd: Path | None) -> str:
+    def recording(cmd: Sequence[str], cwd: Path | None) -> str:
         calls.append(list(cmd))
-        return "" if cmd[1] == "diff" else run(cmd, cwd)
+        return run(cmd, cwd)
 
-    reviewer = WeeklyReview(reviewer.config, no_staged, writer(), out, io.StringIO())
+    monkeypatch.setattr(review, "commit_exact", lambda *args: False)
+    reviewer, out, _ = make_review(vault, writer())
+    reviewer = WeeklyReview(reviewer.config, recording, writer(), out, io.StringIO())
     assert run_review(reviewer) == 0
-    assert not any(cmd[1] == "commit" for cmd in calls)
+    assert out.getvalue() == f"report written: {REPORT}\n"  # no sync attempt either
+    assert not any("update-index" in cmd for cmd in calls)  # the index is not touched
+    assert git(vault, "status", "--porcelain").startswith("??")  # nothing staged
+
+
+# --- only what the tools wrote is committed (#24) ---------------------------------
+
+HEAD_NOTE = "---\ngithub_commits: 2\n---\n"  # Daily/2026-11-03.md in the `vault` fixture
+COLLECTED = 'github_commits: 5\ncollected_at: "2026-11-09T09:00:00-05:00"\n'
+LOG = "## AI log\n- [oab-review] 2026-W45 → [[2026-W45 Weekly review]]\n"
+
+
+def head(git: Git, vault: Path, path: str) -> str:
+    return git(vault, "show", f"HEAD:{path}")
+
+
+def test_user_edits_in_daily_notes_stay_out_of_the_commit(vault: Path, git: Git) -> None:
+    daily = vault / "Daily"
+    # A past note: the collector refreshed its keys, the user is writing in it.
+    past = f"---\ngithub_commits: 5\nworkout_min: 30\n{COLLECTED.split(chr(10))[1]}\n---\nDraft\n"
+    (daily / "2026-11-03.md").write_text(past, encoding="utf-8")
+    # Today's note: the user started it before the review logged its line.
+    (daily / "2026-11-09.md").write_text("---\nmood: ok\n---\nThoughts\n", encoding="utf-8")
+    # A note only the collector wrote, not in git yet.
+    (daily / "2026-11-04.md").write_text(f"---\n{COLLECTED}---\n", encoding="utf-8")
+    # A note with only the user's edits, and one whose keys did not change.
+    (daily / "2026-11-05.md").write_text("---\nworkout_min: 20\n---\n", encoding="utf-8")
+    reviewer, _, err = make_review(vault, writer())
+
+    assert run_review(reviewer) == 0
+
+    assert err.getvalue() == ""
+    committed = git(vault, "show", "--name-only", "--format=", "HEAD").split()
+    assert committed == [
+        "Agents/Reports/2026-W45",
+        "Weekly",
+        "review.md",
+        *["Daily/2026-11-03.md", "Daily/2026-11-04.md", "Daily/2026-11-09.md"],
+    ]
+    assert head(git, vault, "Daily/2026-11-03.md") == f"---\n{COLLECTED}---\n"
+    assert head(git, vault, "Daily/2026-11-04.md") == f"---\n{COLLECTED}---\n"
+    assert head(git, vault, "Daily/2026-11-09.md") == f"---\n---\n\n{LOG}"
+    # The working copy keeps every user edit, plus the log line.
+    assert (daily / "2026-11-03.md").read_text(encoding="utf-8") == past
+    assert (daily / "2026-11-09.md").read_text(encoding="utf-8") == (
+        f"---\nmood: ok\n---\nThoughts\n\n{LOG}"
+    )
+    status = git(vault, "status", "--porcelain", "--untracked-files=all").splitlines()
+    assert sorted(status) == [
+        " M Daily/2026-11-03.md",  # unstaged: the user's edits only
+        " M Daily/2026-11-09.md",
+        "?? Daily/2026-11-05.md",
+    ]
+    added = [
+        line
+        for line in git(vault, "diff", "Daily/2026-11-03.md").splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+    assert added == ["+workout_min: 30", "+Draft"]
+
+
+def test_user_staging_is_kept_with_the_tools_edits_on_top(vault: Path, git: Git) -> None:
+    note = vault / "Daily/2026-11-03.md"
+    note.write_text("---\ngithub_commits: 2\n---\nStaged\n", encoding="utf-8")
+    git(vault, "add", "Daily/2026-11-03.md")
+    note.write_text("---\ngithub_commits: 7\n---\nStaged\nUnstaged\n", encoding="utf-8")
+    reviewer, _, err = make_review(vault, writer())
+
+    assert run_review(reviewer) == 0
+
+    assert err.getvalue() == ""
+    assert head(git, vault, "Daily/2026-11-03.md") == "---\ngithub_commits: 7\n---\n"
+    assert git(vault, "show", ":Daily/2026-11-03.md") == "---\ngithub_commits: 7\n---\nStaged\n"
+    assert note.read_text(encoding="utf-8").endswith("Staged\nUnstaged\n")
+    assert "MM Daily/2026-11-03.md" in git(vault, "status", "--porcelain")
+
+
+def test_staged_version_that_cannot_take_the_edits_is_reported(vault: Path, git: Git) -> None:
+    note = vault / "Daily/2026-11-03.md"
+    note.write_text("no frontmatter\n", encoding="utf-8")
+    git(vault, "add", "Daily/2026-11-03.md")
+    note.write_text("---\ngithub_commits: 9\n---\n", encoding="utf-8")
+    reviewer, _, err = make_review(vault, writer())
+
+    assert run_review(reviewer) == 0
+
+    assert err.getvalue() == ("Daily/2026-11-03.md: your staged version lacks the review's edits\n")
+    assert head(git, vault, "Daily/2026-11-03.md") == "---\ngithub_commits: 9\n---\n"
+    assert git(vault, "show", ":Daily/2026-11-03.md") == "no frontmatter\n"
+
+
+def test_a_staged_deletion_is_kept(vault: Path, git: Git) -> None:
+    git(vault, "rm", "-q", "--cached", "Daily/2026-11-03.md")
+    (vault / "Daily/2026-11-03.md").write_text("---\ngithub_commits: 6\n---\n", "utf-8")
+    reviewer, _, err = make_review(vault, writer())
+
+    assert run_review(reviewer) == 0
+
+    assert err.getvalue() == ""
+    assert head(git, vault, "Daily/2026-11-03.md") == "---\ngithub_commits: 6\n---\n"
+    assert "D  Daily/2026-11-03.md" in git(vault, "status", "--porcelain")
+
+
+def test_notes_whose_edits_cannot_be_separated_stay_uncommitted(vault: Path, git: Git) -> None:
+    note = vault / "Daily/2026-10-20.md"
+    note.write_text("plain\n", encoding="utf-8")  # committed without frontmatter
+    git(vault, "add", "Daily/2026-10-20.md")
+    git(vault, "commit", "-qm", "plain note")
+    note.write_text("---\ngithub_commits: 5\n---\nplain\n", encoding="utf-8")
+    reviewer, _, err = make_review(vault, writer())
+
+    assert run_review(reviewer) == 0, err.getvalue()
+
+    assert err.getvalue() == (
+        "Daily/2026-10-20.md: cannot tell the tools' edits from yours, left uncommitted\n"
+    )
+    assert git(vault, "show", "HEAD:Daily/2026-10-20.md") == "plain\n"
+    assert " M Daily/2026-10-20.md" in git(vault, "status", "--porcelain")
+    assert git(vault, "log", "--format=%s", "-1") == "docs: weekly review 2026-W45\n"
 
 
 def test_pushes_when_there_is_an_upstream(vault: Path, tmp_path: Path, git: Git) -> None:

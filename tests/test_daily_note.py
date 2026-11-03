@@ -10,6 +10,7 @@ from obsidian_agent_backend.daily_note import (
     NoteError,
     append_log,
     atomic_write,
+    frontmatter_lines,
     log_lines,
     merge_frontmatter,
     read_frontmatter,
@@ -217,3 +218,11 @@ def test_log_creates_the_note_and_keeps_metrics(tmp_path: Path) -> None:
     assert path.read_text(encoding="utf-8") == (
         '---\nvault_commits: 2\ncollected_at: "t"\n---\n\n## AI log\n- [oab-review] done\n'
     )
+
+
+def test_frontmatter_lines_reads_raw_values_in_order() -> None:
+    text = '---\nb: 2  \nskip: x\na: "q: r"\nb: 3\nempty:\nnested:\n  b: 4\n---\nb: body\n'
+    assert frontmatter_lines(text, ["a", "b", "empty", "missing"]) == {"b": "2", "a": '"q: r"'}
+    assert list(frontmatter_lines(text, ["a", "b"])) == ["b", "a"]
+    assert frontmatter_lines("b: 1\n", ["b"]) == {}
+    assert frontmatter_lines("---\n---\n", ["b"]) == {}
