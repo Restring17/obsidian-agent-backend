@@ -1,0 +1,28 @@
+# Configuration of the example vault. See ../../oab.example.toml for every key.
+timezone = "Europe/Madrid"
+
+[daily_notes]
+folder = "Daily"
+template = "Templates/Daily.md"
+
+[human_zone]
+folders = ["*"]
+exclude = ["Templates"]
+
+[agent]
+folder = "Agents"
+
+[metrics]
+manual = ["workout_min", "reading_min"]
+
+[applications]
+note = "Career/Applications.md"
+field = "status"
+active = ["applied", "interview"]
+
+[projects]
+folder = "Projects"
+status_field = "status"
+
+[review]
+model = "sonnet"

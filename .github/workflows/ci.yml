@@ -77,6 +77,8 @@ jobs:
           python-version: ${{ matrix.python }}
       # Coverage options (branch, fail-under 90) live in pyproject.toml.
       - run: uv run pytest
+      # End-to-end subset on its own: examples/vault with real git, fake gh and claude.
+      - run: uv run pytest -m e2e
 
   secrets:
     name: secrets

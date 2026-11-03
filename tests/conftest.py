@@ -9,6 +9,16 @@ import pytest
 type Git = Callable[..., str]
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    """A run filtered by marker (``-m e2e``) checks behaviour, not coverage.
+
+    The 90 % branch threshold applies to the full suite; a subset cannot meet it.
+    """
+    coverage = config.pluginmanager.getplugin("_cov")  # pytest-cov keeps its own options
+    if config.option.markexpr and coverage is not None:
+        coverage.options.cov_fail_under = 0
+
+
 @pytest.fixture(autouse=True)
 def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
     """Every git process in the tests, the tool's included, ignores the user's config.
