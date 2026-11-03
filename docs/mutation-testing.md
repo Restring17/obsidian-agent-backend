@@ -28,6 +28,7 @@ runs the test suite against each change. A mutant that no test catches **survive
 |---|---|---|---|---|---|
 | First run (2026-11-03) | 2208 | 2014 | 4 | 190 | 91.4 % |
 | After reviewing survivors | 2208 | 2160 | 4 | 44 | 98.0 % |
+| With `oab-timers` (#9) | 2630 | 2568 | 4 | 58 | 97.8 % |
 
 The score counts timeouts as caught: a mutant that makes the code hang is noticed.
 
@@ -44,9 +45,13 @@ The score counts timeouts as caught: a mutant that makes the code hang is notice
   touched, and a day without data or with an unsafe path not stopping the next days;
 - `run()` kills a command that exceeds its timeout.
 
+For `oab-timers` (#9), 24 of its 38 first survivors were killed the same way. For example,
+`systemd-analyze verify` without `--user` must really drop the flag, because CI has no
+user session.
+
 ## Reviewed survivors (equivalent mutants)
 
-The 44 survivors below cannot change behaviour, so no test can kill them. The weekly job
+The 58 survivors below cannot change behaviour, so no test can kill them. The weekly job
 treats a survivor as reviewed when its name is on this page. Mutant numbers move when code
 changes, so after a refactor the job may list some of them again: review them and update
 this list.
@@ -74,6 +79,13 @@ obsidian_agent_backend.sources.xǁVaultSourceǁ_applications__mutmut_7
 obsidian_agent_backend.sources.xǁVaultSourceǁ_applications__mutmut_9
 obsidian_agent_backend.sources.xǁVaultSourceǁcollect__mutmut_10
 obsidian_agent_backend.sources.xǁVaultSourceǁcollect__mutmut_12
+obsidian_agent_backend.timers.x__ours__mutmut_2
+obsidian_agent_backend.timers.x__ours__mutmut_4
+obsidian_agent_backend.timers.x_render__mutmut_47
+obsidian_agent_backend.timers.x_render__mutmut_50
+obsidian_agent_backend.timers.x_verify__mutmut_10
+obsidian_agent_backend.timers.x_verify__mutmut_12
+obsidian_agent_backend.timers.x_verify__mutmut_14
 obsidian_agent_backend.weekly_context.xǁWeeklyContextǁ_read__mutmut_2
 obsidian_agent_backend.weekly_context.xǁWeeklyContextǁ_read__mutmut_4
 ```
@@ -173,4 +185,23 @@ name `_.md` is irrelevant because the zone only looks at folder names.
 obsidian_agent_backend.sources.x_human_notes__mutmut_5
 obsidian_agent_backend.sources.x_human_notes__mutmut_13
 obsidian_agent_backend.sources.x_human_notes__mutmut_14
+```
+
+### `oab-timers`: values that cannot differ
+
+- `install`: `zip(..., strict=...)` pairs the target paths with the units they were built
+  from, so both lists always have the same length.
+- `render`: `files(None)` infers the package of the calling module, which is the same
+  `obsidian_agent_backend`.
+- `unit_folder`: a missing `XDG_CONFIG_HOME` read as `None` or `"XXXX"` (empty or relative)
+  falls back to `~/.config` exactly like `""`.
+
+```
+obsidian_agent_backend.timers.x_install__mutmut_21
+obsidian_agent_backend.timers.x_install__mutmut_24
+obsidian_agent_backend.timers.x_install__mutmut_25
+obsidian_agent_backend.timers.x_render__mutmut_40
+obsidian_agent_backend.timers.x_unit_folder__mutmut_3
+obsidian_agent_backend.timers.x_unit_folder__mutmut_5
+obsidian_agent_backend.timers.x_unit_folder__mutmut_8
 ```
