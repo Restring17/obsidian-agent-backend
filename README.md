@@ -13,6 +13,26 @@ Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: 
 
 Copy [`oab.example.toml`](oab.example.toml) to your vault root as `oab.toml` and adjust it: daily-notes folder and template, the folders you own (*human zone*), the agent folder, timezone, manual metrics, an optional applications note and the review model. Every key has a default and paths cannot leave the vault. Both commands read `./oab.toml` (or `--config PATH`) and exit with code 2 and a one-line message if the file is invalid, for example on an unknown key or timezone.
 
+## Daily collector
+
+```sh
+oab-collect                       # yesterday, in the configured timezone
+oab-collect --date 2026-11-02 --days 7 --dry-run
+oab-collect --no-github           # vault metrics only
+```
+
+It writes these keys to the frontmatter of `<daily_notes.folder>/YYYY-MM-DD.md`, creating the note from the template only if the day had activity:
+
+| Key | Source |
+|---|---|
+| `github_commits`, `github_repos`, `github_prs` | GitHub search API through `gh` (private repos included) |
+| `vault_commits`, `vault_notes_edited` | `git log` of the vault |
+| `tasks_completed` | `- [x] … ✅ YYYY-MM-DD` tasks in the human zone |
+| `tasks_open`, `applications_active` | current state; written only for today and yesterday |
+| `collected_at` | timestamp of the run |
+
+Only those lines change: the body and every other key stay as they were, and the file is replaced atomically. If a source fails, its keys are left untouched (never written as zero) and the command exits with code 1.
+
 ## Status
 
 | Milestone | Goal |
