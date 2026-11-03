@@ -20,6 +20,9 @@ folder = "Daily"
 # Glob patterns over folder names only (no '/'). The agent folder and hidden folders
 # (.obsidian, .git…) are always excluded.
 folders = ["*"] # example: ["[0-7]0 *"] for numbered folders 00–70
+# Folder names skipped at any depth, e.g. templates whose placeholder tasks
+# should not count as open tasks.
+exclude = [] # example: ["Templates"]
 
 [agent]
 # Top-level folder the agents own: reports and drafts go here.
@@ -27,15 +30,18 @@ folder = "Agents"
 
 [metrics]
 # Frontmatter keys you fill in by hand in daily notes (non-negative numbers).
-# They are summed in the weekly review next to the collected metrics.
+# They are summed in the weekly review next to the collected metrics, and cannot reuse
+# a collected key (github_*, vault_*, tasks_*, applications_active, collected_at).
 manual = [] # example: ["tutoring_hours", "workout_min"]
 
 # Optional: track job applications. Remove the section to disable it.
-# Each list item in the note with an inline Dataview field `[<field>:: ...]` counts
-# as an application, e.g.  - Acme, backend intern [status:: applied]
+# Each inline Dataview field `[<field>:: <value>]` in the note whose value is one of
+# `active` (case-insensitive) counts as an active application, e.g.
+#   - Acme, backend intern [status:: applied]
 # [applications]
 # note = "Career/Applications.md"
 # field = "status"
+# active = ["applied", "interview"]
 
 [review]
 # Claude model for the weekly review: an alias (sonnet, opus) or a full model id.

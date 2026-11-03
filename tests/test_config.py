@@ -23,6 +23,7 @@ template = "00 Inicio/Plantillas/Plantilla - Diario.md"
 
 [human_zone]
 folders = ["[0-7]0 *"]
+exclude = ["Plantillas"]
 
 [agent]
 folder = "90 Agentes"
@@ -33,6 +34,7 @@ manual = ["tutoria_horas", "muay_thai_min"]
 [applications]
 note = "40 Carrera/Postulaciones.md"
 field = "estado"
+active = ["Enviada", "entrevista"]
 
 [review]
 model = "claude-sonnet-5-5"
@@ -68,10 +70,13 @@ def test_full_config_is_loaded(tmp_path: Path) -> None:
         "00 Inicio/Plantillas/Plantilla - Diario.md"
     )
     assert config.human_zone.folders == ("[0-7]0 *",)
+    assert config.human_zone.exclude == ("Plantillas",)
     assert config.agent.folder == PurePosixPath("90 Agentes")
     assert config.metrics.manual == ("tutoria_horas", "muay_thai_min")
     assert config.applications == ApplicationsConfig(
-        note=PurePosixPath("40 Carrera/Postulaciones.md"), field="estado"
+        note=PurePosixPath("40 Carrera/Postulaciones.md"),
+        field="estado",
+        active=("enviada", "entrevista"),
     )
     assert config.review.model == "claude-sonnet-5-5"
 
@@ -83,6 +88,7 @@ def test_empty_config_uses_defaults(tmp_path: Path) -> None:
     assert config.daily_notes.folder == PurePosixPath("Daily")
     assert config.daily_notes.template is None
     assert config.human_zone.folders == ("*",)
+    assert config.human_zone.exclude == ()
     assert config.agent.folder == PurePosixPath("Agents")
     assert config.metrics.manual == ()
     assert config.applications is None
@@ -252,9 +258,7 @@ def test_human_zone_needs_non_empty_strings(value: object) -> None:
 
 @pytest.mark.parametrize("pattern", ["Notes/*", "a\\b", ".", ".."])
 def test_human_zone_patterns_match_folder_names_only(pattern: str) -> None:
-    assert "must match top-level folder names only" in error_of(
-        {"human_zone": {"folders": [pattern]}}
-    )
+    assert "must match folder names only" in error_of({"human_zone": {"folders": [pattern]}})
 
 
 @pytest.mark.parametrize(
@@ -309,7 +313,9 @@ def test_applications_need_a_note() -> None:
 
 def test_applications_field_defaults_to_status() -> None:
     config = parse({"applications": {"note": "Apps.md"}})
-    assert config.applications == ApplicationsConfig(note=PurePosixPath("Apps.md"), field="status")
+    assert config.applications == ApplicationsConfig(
+        note=PurePosixPath("Apps.md"), field="status", active=("applied", "interview")
+    )
 
 
 def test_applications_section_must_be_a_table() -> None:
@@ -356,3 +362,54 @@ def test_resolve_refuses_symlinks_leaving_the_vault(tmp_path: Path) -> None:
     config = parse_config({}, vault=vault)
     with pytest.raises(ConfigError, match="resolves outside the vault"):
         config.resolve(PurePosixPath("Daily/x.md"))
+
+
+# --- collector extensions (#4) ---------------------------------------------------
+
+
+def test_exclude_skips_folders_at_any_depth() -> None:
+    config = parse({"human_zone": {"exclude": ["Templates", "_*"]}})
+    assert config.in_human_zone(PurePosixPath("Notes/a.md"))
+    assert not config.in_human_zone(PurePosixPath("Notes/Templates/daily.md"))
+    assert not config.in_human_zone(PurePosixPath("Templates/daily.md"))
+    assert not config.in_human_zone(PurePosixPath("Notes/_drafts/x.md"))
+    assert config.in_human_zone(PurePosixPath("Notes/Templates.md"))  # files are not folders
+
+
+@pytest.mark.parametrize("value", ["Templates", [1], [""]])
+def test_exclude_must_be_a_list_of_strings(value: object) -> None:
+    assert error_of({"human_zone": {"exclude": value}}) == (
+        "human_zone.exclude must be a list of strings"
+    )
+
+
+def test_exclude_patterns_match_folder_names_only() -> None:
+    assert error_of({"human_zone": {"exclude": ["a/b"]}}) == (
+        "human_zone.exclude: 'a/b' must match folder names only"
+    )
+
+
+@pytest.mark.parametrize("key", ["github_commits", "tasks_open", "collected_at"])
+def test_manual_metrics_cannot_reuse_collected_keys(key: str) -> None:
+    assert error_of({"metrics": {"manual": [key]}}) == (
+        f"metrics.manual: {key!r} is written by the collector"
+    )
+
+
+@pytest.mark.parametrize("value", [[], "applied"])
+def test_applications_active_must_be_a_non_empty_list(value: object) -> None:
+    assert error_of({"applications": {"note": "A.md", "active": value}}) == (
+        "applications.active must be a non-empty list of strings"
+    )
+
+
+@pytest.mark.parametrize("value", ["", "  ", "a]b", "[x", "a\nb", "x" * 65, 3])
+def test_applications_active_values_are_validated(value: object) -> None:
+    message = error_of({"applications": {"note": "A.md", "active": [value]}})
+    assert message == f"applications.active: {value!r} is not a valid field value"
+
+
+def test_applications_active_values_are_normalised() -> None:
+    config = parse({"applications": {"note": "A.md", "active": [" Applied ", "INTERVIEW"]}})
+    assert config.applications is not None
+    assert config.applications.active == ("applied", "interview")
