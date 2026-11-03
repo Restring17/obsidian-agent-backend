@@ -12,6 +12,7 @@ It covers ISO week **2026-W44** (Monday 2026-10-26 to Sunday 2026-11-01):
 | `Career/Applications.md` | Job applications as inline Dataview fields (`[status:: applied]`) |
 | `Templates/Daily.md` | Template for new daily notes (excluded from the human zone) |
 | `Agents/Reports/` | Last week's report, so the review can check continuity |
+| `Dashboard.md` | Dataview tables for week 2026-W44; run `oab-collect --no-github --date 2026-11-01 --days 7` on the copy first |
 
 Try it on a copy, since both commands write into the vault and commit:
 
