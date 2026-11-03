@@ -1,6 +1,6 @@
 [project]
 name = "obsidian-agent-backend"
-version = "0.1.0.dev0"
+version = "0.1.0"
 description = "Turn an Obsidian vault into a backend for AI agents: a deterministic daily collector and a least-privilege weekly review."
 readme = "README.md"
 license = "MIT"
