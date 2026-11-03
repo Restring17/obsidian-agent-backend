@@ -19,10 +19,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from obsidian_agent_backend.domain import METRIC_KEY, RESERVED_KEYS
+
 DEFAULT_CONFIG_NAME = "oab.toml"
 
-METRIC_KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 FIELD_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+# A Dataview inline value such as ``applied`` in ``[status:: applied]``.
+FIELD_VALUE = re.compile(r"^[^\[\]\n]{1,64}$")
 # Aliases (``sonnet``) and full ids (``claude-sonnet-5-5``, ``sonnet[1m]``). The value is
 # passed as a single argv item, never through a shell; the pattern keeps it to a plain token.
 MODEL_NAME = re.compile(r"^[a-z0-9][a-z0-9.\-\[\]]{0,63}$")
@@ -45,6 +48,7 @@ class DailyNotesConfig:
 @dataclass(frozen=True, slots=True)
 class HumanZoneConfig:
     folders: tuple[str, ...]
+    exclude: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,7 @@ class MetricsConfig:
 class ApplicationsConfig:
     note: PurePosixPath
     field: str
+    active: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +95,10 @@ class Config:
             return False
         top = parts[0]
         if top.startswith(".") or top == self.agent.folder.name:
+            return False
+        if any(
+            fnmatchcase(part, pattern) for part in parts[:-1] for pattern in self.human_zone.exclude
+        ):
             return False
         return any(fnmatchcase(top, pattern) for pattern in self.human_zone.folders)
 
@@ -131,7 +140,7 @@ def parse_config(data: Table, vault: Path) -> Config:
     daily = _table(data, "daily_notes")
     _check_keys(daily, "daily_notes", {"folder", "template"})
     zone = _table(data, "human_zone")
-    _check_keys(zone, "human_zone", {"folders"})
+    _check_keys(zone, "human_zone", {"folders", "exclude"})
     agent = _table(data, "agent")
     _check_keys(agent, "agent", {"folder"})
     metrics = _table(data, "metrics")
@@ -157,7 +166,10 @@ def parse_config(data: Table, vault: Path) -> Config:
             if template is None
             else _note(_string(daily, "template", prefix="daily_notes"), "daily_notes.template"),
         ),
-        human_zone=HumanZoneConfig(folders=_patterns(zone)),
+        human_zone=HumanZoneConfig(
+            folders=_patterns(zone, "folders", ["*"]),
+            exclude=_patterns(zone, "exclude", [], allow_empty=True),
+        ),
         agent=AgentConfig(folder=agent_folder),
         metrics=MetricsConfig(manual=_metric_keys(metrics)),
         applications=_applications(data),
@@ -230,18 +242,20 @@ def _note(raw: str, key: str) -> PurePosixPath:
     return path
 
 
-def _patterns(zone: Table) -> tuple[str, ...]:
-    raw = zone.get("folders", ["*"])
-    if not isinstance(raw, list) or not raw:
-        raise ConfigError("human_zone.folders must be a non-empty list of strings")
+def _patterns(
+    zone: Table, key: str, default: list[str], *, allow_empty: bool = False
+) -> tuple[str, ...]:
+    """Glob patterns over single folder names (never across '/')."""
+    raw = zone.get(key, default)
+    shape = "a list of strings" if allow_empty else "a non-empty list of strings"
+    if not isinstance(raw, list) or not (raw or allow_empty):
+        raise ConfigError(f"human_zone.{key} must be {shape}")
     patterns: list[str] = []
     for item in raw:
         if not isinstance(item, str) or not item.strip():
-            raise ConfigError("human_zone.folders must be a non-empty list of strings")
+            raise ConfigError(f"human_zone.{key} must be {shape}")
         if _PATTERN_FORBIDDEN & set(item) or item in {".", ".."}:
-            raise ConfigError(
-                f"human_zone.folders: {item!r} must match top-level folder names only"
-            )
+            raise ConfigError(f"human_zone.{key}: {item!r} must match folder names only")
         patterns.append(item)
     return tuple(patterns)
 
@@ -256,6 +270,8 @@ def _metric_keys(metrics: Table) -> tuple[str, ...]:
             raise ConfigError(
                 f"metrics.manual: {item!r} is not a valid key (lowercase, digits, '_')"
             )
+        if item in RESERVED_KEYS:
+            raise ConfigError(f"metrics.manual: {item!r} is written by the collector")
         if item in keys:
             raise ConfigError(f"metrics.manual: duplicate key {item!r}")
         keys.append(item)
@@ -266,7 +282,7 @@ def _applications(data: Table) -> ApplicationsConfig | None:
     if "applications" not in data:
         return None
     table = _table(data, "applications")
-    _check_keys(table, "applications", {"note", "field"})
+    _check_keys(table, "applications", {"note", "field", "active"})
     if "note" not in table:
         raise ConfigError("applications.note is required when [applications] is present")
     field = _string(table, "field", "status", prefix="applications")
@@ -275,7 +291,20 @@ def _applications(data: Table) -> ApplicationsConfig | None:
     return ApplicationsConfig(
         note=_note(_string(table, "note", prefix="applications"), "applications.note"),
         field=field,
+        active=_active_values(table),
     )
+
+
+def _active_values(table: Table) -> tuple[str, ...]:
+    raw = table.get("active", ["applied", "interview"])
+    if not isinstance(raw, list) or not raw:
+        raise ConfigError("applications.active must be a non-empty list of strings")
+    values: list[str] = []
+    for item in raw:
+        if not isinstance(item, str) or not FIELD_VALUE.match(item) or not item.strip():
+            raise ConfigError(f"applications.active: {item!r} is not a valid field value")
+        values.append(item.strip().casefold())
+    return tuple(values)
 
 
 def _model(name: str) -> str:
