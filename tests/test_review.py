@@ -348,11 +348,22 @@ def test_pushes_when_there_is_an_upstream(vault: Path, tmp_path: Path, git: Git)
     git(tmp_path, "init", "-q", "--bare", str(remote))
     git(vault, "remote", "add", "origin", str(remote))
     git(vault, "push", "-q", "-u", "origin", "main")
-    reviewer, out, _ = make_review(vault, writer())
+    cwds: list[Path | None] = []
+
+    def recording(cmd: Sequence[str], cwd: Path | None) -> str:
+        cwds.append(cwd)
+        return run(cmd, cwd)
+
+    out = io.StringIO()
+    reviewer = WeeklyReview(make_config(vault), recording, writer(), out, io.StringIO())
 
     assert run_review(reviewer) == 0
     assert out.getvalue() == f"report written: {REPORT}\n"
     assert git(remote, "log", "--format=%s", "-1", "main") == "docs: weekly review 2026-W45\n"
+    # Every git command, pull and push included, runs in the vault and never in the
+    # working directory of the process (which may be another repository).
+    assert cwds
+    assert set(cwds) == {vault}
 
 
 def test_sync_failure_keeps_the_local_commit(vault: Path, tmp_path: Path, git: Git) -> None:
