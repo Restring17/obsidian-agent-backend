@@ -1,0 +1,42 @@
+# obsidian-agent-backend configuration.
+#
+# Copy this file to the root of your vault as `oab.toml`. The vault root is the
+# directory that contains the file; pass another location with `--config PATH`.
+# Every key is optional and shows its default unless marked as an example.
+# Paths are relative to the vault, use '/' and cannot leave it.
+# Unknown keys are rejected, so typos fail fast instead of being ignored.
+
+# IANA timezone that defines where a day starts and ends.
+timezone = "UTC" # example: "America/Lima"
+
+[daily_notes]
+# Folder with one note per day, named YYYY-MM-DD.md.
+folder = "Daily"
+# Note copied when a daily note does not exist yet. Omit to start from an empty note.
+# template = "Templates/Daily.md"
+
+[human_zone]
+# Top-level folders written by you. The weekly review reads them; agents never write there.
+# Glob patterns over folder names only (no '/'). The agent folder and hidden folders
+# (.obsidian, .git…) are always excluded.
+folders = ["*"] # example: ["[0-7]0 *"] for numbered folders 00–70
+
+[agent]
+# Top-level folder the agents own: reports and drafts go here.
+folder = "Agents"
+
+[metrics]
+# Frontmatter keys you fill in by hand in daily notes (non-negative numbers).
+# They are summed in the weekly review next to the collected metrics.
+manual = [] # example: ["tutoring_hours", "workout_min"]
+
+# Optional: track job applications. Remove the section to disable it.
+# Each list item in the note with an inline Dataview field `[<field>:: ...]` counts
+# as an application, e.g.  - Acme, backend intern [status:: applied]
+# [applications]
+# note = "Career/Applications.md"
+# field = "status"
+
+[review]
+# Claude model for the weekly review: an alias (sonnet, opus) or a full model id.
+model = "sonnet"

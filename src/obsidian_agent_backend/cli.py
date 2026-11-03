@@ -1,25 +1,41 @@
 """Console entry points.
 
-Both commands are stubs until the collector (#4) and the review agent (#5) land.
+Both commands load and validate the config, then stop: the collector (#4) and the
+review agent (#5) are not implemented yet.
 """
 
 import argparse
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from obsidian_agent_backend import __version__
+from obsidian_agent_backend.config import DEFAULT_CONFIG_NAME, ConfigError, load_config
 
-EXIT_NOT_IMPLEMENTED = 2
+EXIT_CONFIG_ERROR = 2
+EXIT_NOT_IMPLEMENTED = 3
 
 
 def _build_parser(prog: str, description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=prog, description=description)
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path(DEFAULT_CONFIG_NAME),
+        metavar="PATH",
+        help=f"config file at the vault root (default: ./{DEFAULT_CONFIG_NAME})",
+    )
     return parser
 
 
 def _run_stub(prog: str, description: str, argv: Sequence[str] | None) -> int:
-    _build_parser(prog, description).parse_args(argv)
+    args = _build_parser(prog, description).parse_args(argv)
+    try:
+        load_config(args.config)
+    except ConfigError as exc:
+        print(f"{prog}: error: {exc}", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
     print(f"{prog}: not implemented yet", file=sys.stderr)
     return EXIT_NOT_IMPLEMENTED
 
