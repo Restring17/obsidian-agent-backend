@@ -1,8 +1,5 @@
 import argparse
-import os
-import shutil
-import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -11,6 +8,8 @@ import pytest
 
 from obsidian_agent_backend import __version__, cli
 from obsidian_agent_backend.domain import Metrics
+
+type Git = Callable[..., str]  # the `git` fixture from conftest.py
 
 EntryPoint = Callable[[list[str] | None], int]
 
@@ -82,11 +81,58 @@ def test_version_is_a_non_empty_string() -> None:
     assert __version__
 
 
-def test_review_is_still_a_stub(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    config = tmp_path / "oab.toml"
-    config.write_text("", encoding="utf-8")
-    assert cli.review_main(["--config", str(config)]) == cli.EXIT_NOT_IMPLEMENTED
-    assert capsys.readouterr().err == "oab-review: not implemented yet\n"
+def test_review_dry_run_prints_the_prompt_for_last_week(
+    vault: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def no_agent(cmd: Sequence[str], cwd: Path | None) -> str:
+        raise AssertionError("the model must not be called in a dry run")
+
+    args = ["--config", str(vault / "oab.toml"), "--dry-run"]
+    assert cli.review_main(args, now=NOW, agent_runner=no_agent) == 0
+    out = capsys.readouterr().out
+    assert "`90 Agents/Reports/2026-W44 Weekly review.md`" in out
+    assert "# Data for week 2026-W44 (2026-10-26 to 2026-11-01)" in out
+
+
+def test_review_with_week_and_model(vault: Path) -> None:
+    seen: list[list[str]] = []
+
+    def agent(cmd: Sequence[str], cwd: Path | None) -> str:
+        seen.append(list(cmd))
+        return ""
+
+    args = ["--config", str(vault / "oab.toml"), "--week", "2026-W45", "--model", "opus"]
+    assert cli.review_main(args, now=NOW, agent_runner=agent) == 1  # no report was written
+    assert seen[0][seen[0].index("--model") + 1] == "opus"
+    assert "`90 Agents/Reports/2026-W45 Weekly review.md`" in seen[0][2]
+
+
+def test_review_rejects_future_weeks(vault: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    args = ["--config", str(vault / "oab.toml"), "--week", "2026-W46"]
+    assert cli.review_main(args, now=NOW) == cli.EXIT_CONFIG_ERROR
+    assert "week 2026-W46 has not started yet" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("args", [["--week", "2026-45"], ["--model", "a b"]])
+def test_review_rejects_invalid_arguments(
+    args: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli.review_main(args)
+    assert exc.value.code == 2
+    assert "oab-review: error: argument" in capsys.readouterr().err
+
+
+def test_agent_runner_uses_the_long_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_run(cmd: Sequence[str], cwd: Path | None = None, timeout: float = 0) -> str:
+        seen.update(cmd=list(cmd), timeout=timeout)
+        return "ok"
+
+    monkeypatch.setattr(cli, "run", fake_run)
+    assert cli._agent_runner(["claude"], None) == "ok"
+    assert seen == {"cmd": ["claude"], "timeout": 15 * 60}
 
 
 # --- argument validation ---------------------------------------------------------
@@ -135,23 +181,8 @@ def test_collect_rejects_future_dates(tmp_path: Path, capsys: pytest.CaptureFixt
 # --- end to end with a real git repository ---------------------------------------
 
 
-def git(vault: Path, *args: str, when: str | None = None) -> None:
-    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull}
-    if when:
-        env |= {"GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
-    executable = shutil.which("git")
-    assert executable
-    subprocess.run(  # noqa: S603
-        [executable, "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
-        cwd=vault,
-        env=env,
-        check=True,
-        capture_output=True,
-    )
-
-
 @pytest.fixture
-def vault(tmp_path: Path) -> Path:
+def vault(tmp_path: Path, git: Git) -> Path:
     (tmp_path / "oab.toml").write_text(CONFIG, encoding="utf-8")
     notes = tmp_path / "10 Notes"
     notes.mkdir()

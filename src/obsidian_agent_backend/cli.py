@@ -1,7 +1,7 @@
 """Console entry points.
 
-Exit codes: 0 success, 1 a source or a note write failed, 2 invalid arguments or
-config. ``oab-review`` is a stub until the review agent (#5) lands.
+Exit codes: 0 success, 1 a source, the agent or a write failed, 2 invalid arguments
+or config.
 """
 
 import argparse
@@ -12,12 +12,19 @@ from pathlib import Path
 
 from obsidian_agent_backend import __version__
 from obsidian_agent_backend.collector import Collector
-from obsidian_agent_backend.config import DEFAULT_CONFIG_NAME, Config, ConfigError, load_config
+from obsidian_agent_backend.config import (
+    DEFAULT_CONFIG_NAME,
+    MODEL_NAME,
+    Config,
+    ConfigError,
+    load_config,
+)
 from obsidian_agent_backend.daily_note import DailyNote
-from obsidian_agent_backend.sources import GitHubSource, VaultSource
+from obsidian_agent_backend.review import AGENT_TIMEOUT, ReviewOptions, WeeklyReview
+from obsidian_agent_backend.sources import GitHubSource, Runner, VaultSource, run
+from obsidian_agent_backend.week import IsoWeek
 
 EXIT_CONFIG_ERROR = 2
-EXIT_NOT_IMPLEMENTED = 3
 MAX_DAYS = 31
 
 
@@ -95,13 +102,56 @@ def collect_main(argv: Sequence[str] | None = None, now: datetime | None = None)
     return collector.run(days, today, current.strftime("%Y-%m-%dT%H:%M"), args.dry_run)
 
 
-def review_main(argv: Sequence[str] | None = None) -> int:
+def iso_week(text: str) -> IsoWeek:
+    try:
+        return IsoWeek.parse(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
+def model_name(text: str) -> str:
+    if not MODEL_NAME.match(text):
+        raise argparse.ArgumentTypeError(f"invalid model name: {text!r}")
+    return text
+
+
+def _agent_runner(cmd: Sequence[str], cwd: Path | None) -> str:
+    return run(cmd, cwd, timeout=AGENT_TIMEOUT)
+
+
+def review_main(
+    argv: Sequence[str] | None = None,
+    now: datetime | None = None,
+    agent_runner: Runner = _agent_runner,
+    runner: Runner = run,
+) -> int:
     """Entry point for ``oab-review``: run the least-privilege weekly review."""
     prog = "oab-review"
-    args = _build_parser(prog, "Write the weekly review with a least-privilege agent.").parse_args(
-        argv
+    parser = _build_parser(prog, "Write the weekly review with a least-privilege agent.")
+    parser.add_argument("--week", type=iso_week, help="ISO week YYYY-Www (default: last week)")
+    parser.add_argument("--model", type=model_name, help="override review.model")
+    parser.add_argument(
+        "--test", action="store_true", help="write a '(test)' report, no log or commit"
     )
-    if _load(prog, args.config) is None:
+    parser.add_argument("--force", action="store_true", help="redo the report if it exists")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="print the prompt without calling the model"
+    )
+    args = parser.parse_args(argv)
+
+    config = _load(prog, args.config)
+    if config is None:
         return EXIT_CONFIG_ERROR
-    print(f"{prog}: not implemented yet", file=sys.stderr)
-    return EXIT_NOT_IMPLEMENTED
+    today = (now or datetime.now(config.timezone)).astimezone(config.timezone).date()
+    week: IsoWeek = args.week or IsoWeek.before(today)
+    if week.start > today:
+        print(f"{prog}: error: week {week.label} has not started yet", file=sys.stderr)
+        return EXIT_CONFIG_ERROR
+    review = WeeklyReview(config, runner, agent_runner, sys.stdout, sys.stderr)
+    options = ReviewOptions(
+        model=args.model or config.review.model,
+        test=args.test,
+        force=args.force,
+        dry_run=args.dry_run,
+    )
+    return review.run(week, today, options)

@@ -20,6 +20,7 @@ from obsidian_agent_backend.config import Config, ConfigError
 from obsidian_agent_backend.domain import COLLECTED_AT_KEY, Metrics
 
 FRONTMATTER = re.compile(r"\A---\n(.*?\n)?---(?:\n|\Z)", re.DOTALL)
+SECTION = re.compile(r"^#{1,2} ", re.MULTILINE)
 # Obsidian core Templates and Templater-style date placeholders.
 DATE_PLACEHOLDERS = ("{{date:YYYY-MM-DD}}", "{{date}}", "{{title}}")
 EMPTY_NOTE = "---\n---\n"
@@ -28,6 +29,53 @@ TEMP_PREFIX = ".oab-"
 
 class NoteError(Exception):
     """The note or the template does not have the expected format."""
+
+
+def read_frontmatter(text: str) -> dict[str, object]:
+    """The frontmatter as a mapping; empty when missing or invalid (never raises)."""
+    match = FRONTMATTER.match(text)
+    if not match:
+        return {}
+    try:
+        data = yaml.safe_load(match.group(1) or "")
+    except yaml.YAMLError:
+        return {}
+    return {str(key): value for key, value in data.items()} if isinstance(data, dict) else {}
+
+
+def _log_section(text: str, heading: str) -> tuple[int, int] | None:
+    """Start and end offsets of the body of ``## <heading>``, if present."""
+    match = re.search(rf"^## {re.escape(heading)}[ \t]*\n", text, re.MULTILINE)
+    if not match:
+        return None
+    following = SECTION.search(text, match.end())
+    return match.end(), following.start() if following else len(text)
+
+
+def log_lines(text: str, heading: str) -> list[str]:
+    """List items (``- …``) of the ``## <heading>`` section."""
+    bounds = _log_section(text, heading)
+    if bounds is None:
+        return []
+    body = text[bounds[0] : bounds[1]]
+    return [line.strip() for line in body.splitlines() if line.strip().startswith("- ")]
+
+
+def append_log(text: str, heading: str, line: str) -> str:
+    """Append ``line`` to the end of ``## <heading>``, creating the section if needed."""
+    if not line.strip() or "\n" in line or "\r" in line:
+        raise NoteError("a log entry must be a single non-empty line")
+    if not text.endswith("\n"):
+        text += "\n"
+    bounds = _log_section(text, heading)
+    if bounds is None:
+        return text.rstrip("\n") + f"\n\n## {heading}\n{line}\n"
+    start, end = bounds
+    body = text[start:end].rstrip("\n")
+    rest = text[end:]
+    return (
+        text[:start] + body + ("\n" if body else "") + line + "\n" + ("\n" + rest if rest else "")
+    )
 
 
 def merge_frontmatter(text: str, values: Mapping[str, str]) -> str:
@@ -106,6 +154,12 @@ class DailyNote:
             return path.read_text(encoding="utf-8")
         except UnicodeError:
             raise NoteError(f"{path.name} is not valid UTF-8") from None
+
+    def log(self, day: date, line: str) -> Path:
+        """Append a line to the log section of the day's note (created if missing)."""
+        path = self.path(day)
+        atomic_write(path, append_log(self._read(day), self._config.daily_notes.log_heading, line))
+        return path
 
     def update(self, day: date, metrics: Metrics, collected_at: str) -> Path:
         """Write ``metrics`` and the collection timestamp; create the note if needed."""

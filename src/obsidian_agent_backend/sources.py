@@ -30,7 +30,7 @@ PER_PAGE = 100
 OPEN_TASK = re.compile(r"^\s*[-*+] \[ \](?:[ \t]|$)", re.MULTILINE)
 
 
-def run(cmd: Sequence[str], cwd: Path | None = None) -> str:
+def run(cmd: Sequence[str], cwd: Path | None = None, timeout: float = COMMAND_TIMEOUT) -> str:
     """Run a command without a shell and return its standard output."""
     executable = shutil.which(cmd[0])
     if executable is None:
@@ -42,7 +42,7 @@ def run(cmd: Sequence[str], cwd: Path | None = None) -> str:
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=COMMAND_TIMEOUT,
+            timeout=timeout,
             check=True,
         )
     except subprocess.CalledProcessError as exc:
@@ -57,6 +57,23 @@ def day_bounds(day: date, tz: ZoneInfo) -> tuple[str, str]:
     start = datetime.combine(day, time.min, tzinfo=tz)
     end = datetime.combine(day, time(23, 59, 59), tzinfo=tz)
     return start.isoformat(), end.isoformat()
+
+
+def human_notes(config: Config) -> list[Path]:
+    """Every Markdown file in the human zone, sorted."""
+    root = config.vault
+    in_zone = config.in_human_zone
+    notes: list[Path] = []
+    # Filter top-level folders first so .git and the agent folder are never walked.
+    for top in sorted(root.iterdir()):
+        if not top.is_dir() or not in_zone(PurePosixPath(top.name, "_.md")):
+            continue
+        notes += (
+            path
+            for path in top.rglob("*.md")
+            if path.is_file() and in_zone(PurePosixPath(path.relative_to(root).as_posix()))
+        )
+    return sorted(notes)
 
 
 class GitHubSource:
@@ -116,21 +133,6 @@ class VaultSource:
         self._config = config
         self._run = runner
 
-    def _human_notes(self) -> list[Path]:
-        root = self._config.vault
-        in_zone = self._config.in_human_zone
-        notes: list[Path] = []
-        # Filter top-level folders first so .git and the agent folder are never walked.
-        for top in sorted(root.iterdir()):
-            if not top.is_dir() or not in_zone(PurePosixPath(top.name, "_.md")):
-                continue
-            notes += (
-                path
-                for path in top.rglob("*.md")
-                if path.is_file() and in_zone(PurePosixPath(path.relative_to(root).as_posix()))
-            )
-        return sorted(notes)
-
     def _git(self, day: date) -> tuple[int, int]:
         start, end = day_bounds(day, self._config.timezone)
         output = self._run(
@@ -166,7 +168,7 @@ class VaultSource:
             rf"^\s*[-*+] \[[xX]\][ \t].*✅ ?{re.escape(day.isoformat())}", re.MULTILINE
         )
         try:
-            texts = [path.read_text(encoding="utf-8") for path in self._human_notes()]
+            texts = [path.read_text(encoding="utf-8") for path in human_notes(self._config)]
         except (OSError, UnicodeError) as exc:
             raise SourceError(f"cannot read the vault notes: {type(exc).__name__}") from exc
         values = {
