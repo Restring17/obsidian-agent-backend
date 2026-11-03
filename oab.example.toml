@@ -14,6 +14,8 @@ timezone = "UTC" # example: "America/Lima"
 folder = "Daily"
 # Note copied when a daily note does not exist yet. Omit to start from an empty note.
 # template = "Templates/Daily.md"
+# Heading (level 2, without '#') where agents log one line per run.
+log_heading = "AI log"
 
 [human_zone]
 # Top-level folders written by you. The weekly review reads them; agents never write there.
@@ -23,6 +25,8 @@ folders = ["*"] # example: ["[0-7]0 *"] for numbered folders 00–70
 # Folder names skipped at any depth, e.g. templates whose placeholder tasks
 # should not count as open tasks.
 exclude = [] # example: ["Templates"]
+# Frontmatter key that hides a note from the weekly review when set to true.
+private_field = "private"
 
 [agent]
 # Top-level folder the agents own: reports and drafts go here.
@@ -43,6 +47,15 @@ manual = [] # example: ["tutoring_hours", "workout_min"]
 # field = "status"
 # active = ["applied", "interview"]
 
+# Optional: list projects in the weekly review. Every note under the folder with a
+# non-empty status field is listed with its status.
+# [projects]
+# folder = "Projects"
+# status_field = "status"
+
 [review]
 # Claude model for the weekly review: an alias (sonnet, opus) or a full model id.
 model = "sonnet"
+# Your own prompt template (vault-relative .md). Omit to use the built-in one.
+# Placeholders: $report_path $week $start $end $today $previous_report $data ($$ = "$").
+# prompt = "Agents/weekly-review-prompt.md"

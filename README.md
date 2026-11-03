@@ -33,6 +33,23 @@ It writes these keys to the frontmatter of `<daily_notes.folder>/YYYY-MM-DD.md`,
 
 Only those lines change: the body and every other key stay as they were, and the file is replaced atomically. If a source fails, its keys are left untouched (never written as zero) and the command exits with code 1.
 
+## Weekly review
+
+```sh
+oab-review --dry-run              # print the prompt for last week, no model call
+oab-review                        # last ISO week, in the configured timezone
+oab-review --week 2026-W45 --model opus --force
+oab-review --test                 # write a "(test)" report, no log or commit
+```
+
+The tool computes the week's data (metrics per day with totals, AI log, vault commits, open tasks, applications, projects) and passes it to `claude -p`. The agent can only `Read`, `Glob` and `Grep`, plus `Write`/`Edit` on `<agent.folder>/Reports/<week> Weekly review.md`. Bash and web tools are disallowed. Afterwards:
+
+1. `git status --porcelain -z` and content hashes check that no other file changed, including files that were already modified before the run. Otherwise the run fails and nothing is committed.
+2. The report frontmatter must have `type: agent`, the right `week` and a `summary`.
+3. One line is logged in today's daily note, and only the report and the daily notes are committed (`git commit -- <paths>`, so anything you staged stays out). The tool pushes only if the branch has an upstream.
+
+Notes whose frontmatter has `private: true` (the key is configurable) are left out of the data.
+
 ## Status
 
 | Milestone | Goal |
