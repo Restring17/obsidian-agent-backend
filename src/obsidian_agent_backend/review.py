@@ -19,7 +19,16 @@ from typing import TextIO
 from obsidian_agent_backend.config import Config, ConfigError
 from obsidian_agent_backend.daily_note import DailyNote, NoteError, read_frontmatter
 from obsidian_agent_backend.domain import SourceError
+from obsidian_agent_backend.exact_commit import (
+    changed_paths,
+    commit_exact,
+    has_staged_changes,
+    index_text,
+    stage,
+    write_blob,
+)
 from obsidian_agent_backend.sources import Runner
+from obsidian_agent_backend.tool_changes import Change, daily_note_changes
 from obsidian_agent_backend.week import IsoWeek
 from obsidian_agent_backend.weekly_context import WeeklyContext
 
@@ -100,22 +109,6 @@ def claude_command(prompt: str, report: PurePosixPath, model: str) -> list[str]:
     ]  # fmt: skip
 
 
-def changed_paths(vault: Path, runner: Runner) -> set[str]:
-    """Paths with changes, untracked included. ``-z`` avoids any quoting ambiguity."""
-    output = runner(["git", "status", "--porcelain", "-z", "--untracked-files=all"], vault)
-    tokens = output.split("\0")
-    paths, index = set(), 0
-    while index < len(tokens):
-        entry = tokens[index]
-        index += 1
-        if len(entry) < 4:  # noqa: PLR2004 ("XY " plus at least one character)
-            continue
-        paths.add(entry[3:])
-        if entry[0] in "RC":
-            index += 1  # the next token is the source path of a rename or copy
-    return paths
-
-
 def _digest(path: Path) -> str | None:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -193,15 +186,42 @@ class WeeklyReview:
             )
         validate_report(target, week)
 
-    def _publish(self, report: PurePosixPath, week: IsoWeek) -> bool:
-        """Commit only the report and the daily notes, then sync if there is an upstream."""
+    def _publish(self, report: PurePosixPath, week: IsoWeek, today: date, log_line: str) -> bool:
+        """Commit what the tools wrote and nothing else; sync if there is an upstream.
+
+        That is the report, our log line and the collector's keys in the daily notes. The
+        user's own edits, even in the same notes, and their staged changes are left as they
+        were (see :mod:`tool_changes` and :mod:`exact_commit`).
+        """
         vault, run = self.config.vault, self.runner
-        paths = [report.as_posix(), self.config.daily_notes.folder.as_posix()]
-        run(["git", "add", "--", *paths], vault)
-        if not run(["git", "diff", "--cached", "--name-only", "--", *paths], vault).strip():
-            return True
+        text = self.config.resolve(report).read_text(encoding="utf-8")
+        notes = daily_note_changes(self.config, run, today, log_line)
+        changes = {report.as_posix(): Change(text, lambda _: text), **notes.changes}
+        for path in notes.skipped:
+            print(
+                f"{path}: cannot tell the tools' edits from yours, left uncommitted", file=self.err
+            )
+        staged = {path for path in changes if has_staged_changes(vault, run, path)}
+        blobs = {
+            path: write_blob(vault, run, path, change.text) for path, change in changes.items()
+        }
         message = f"docs: weekly review {week.label}\n\nWritten by oab-review (claude -p)."
-        run(["git", "commit", "-q", "-m", message, "--", *paths], vault)
+        if not commit_exact(vault, run, blobs, message):
+            return True
+        for path, blob in blobs.items():
+            if path not in staged:
+                stage(vault, run, path, blob)  # the index follows the new commit
+                continue
+            # The user staged this file: keep what they staged, plus our edits, so their
+            # next commit does not undo ours.
+            current = index_text(vault, run, path)
+            try:
+                if current is not None:
+                    stage(
+                        vault, run, path, write_blob(vault, run, path, changes[path].redo(current))
+                    )
+            except NoteError:
+                print(f"{path}: your staged version lacks the review's edits", file=self.err)
         try:
             run(["git", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], vault)
         except SourceError:
@@ -233,8 +253,9 @@ class WeeklyReview:
         if options.test:
             return EXIT_OK
         try:
-            DailyNote(self.config).log(today, f"- [oab-review] {week.label} → [[{report.stem}]]")
-            return EXIT_OK if self._publish(report, week) else EXIT_FAILED
+            line = f"- [oab-review] {week.label} → [[{report.stem}]]"
+            DailyNote(self.config).log(today, line)
+            return EXIT_OK if self._publish(report, week, today, line) else EXIT_FAILED
         except (NoteError, OSError, SourceError) as exc:
             print(f"report written, but logging or committing failed: {exc}", file=self.err)
             return EXIT_FAILED

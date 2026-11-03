@@ -120,7 +120,7 @@ oab-review --week 2026-W45 --model opus --force
 oab-review --test                 # write a "(test)" report, no log or commit
 ```
 
-The tool computes the week's data and passes it to the agent inside the prompt: metrics per day with totals, the AI log, vault commits, open tasks, applications and projects. The report goes to `<agent.folder>/Reports/<week> Weekly review.md`. A successful run logs one line in today's daily note and commits the report together with the daily-notes folder. It pushes only if the branch has an upstream. You can replace the [built-in prompt](src/obsidian_agent_backend/prompts/weekly_review.md) with your own (`review.prompt`).
+The tool computes the week's data and passes it to the agent inside the prompt: metrics per day with totals, the AI log, vault commits, open tasks, applications and projects. The report goes to `<agent.folder>/Reports/<week> Weekly review.md`. A successful run logs one line in today's daily note and commits only what the tools wrote: the report, that line and the collector's keys in the daily notes. Your own edits stay uncommitted (see [Security model](#security-model)). It pushes only if the branch has an upstream. You can replace the [built-in prompt](src/obsidian_agent_backend/prompts/weekly_review.md) with your own (`review.prompt`).
 
 ## Security model
 
@@ -141,11 +141,13 @@ The agent is a language model reading notes you wrote, so any note could contain
 
 1. Before the agent starts, the tool takes the output of `git status --porcelain -z` and a SHA-256 hash of every file that is already modified. After the run it compares both. Any other new, changed or deleted file, **including edits to files you had left uncommitted**, fails the run. Nothing is logged or committed.
 2. The report must exist and its frontmatter must have `type: agent`, the right `week` and a non-empty `summary`.
-3. The commit names its paths: the report and the daily-notes folder (`git commit -- <report> <daily folder>`). Files you had staged elsewhere stay out of it. Pending edits to your daily notes, however, go in with it.
+3. The commit holds only what the tools wrote, even in a note you are editing. Each changed daily note is rebuilt from its committed version (or the template, if git does not track it yet) plus the collector's keys and the review's log line. The commit is built in a temporary index, so your working tree and your staged changes are never used. It moves the branch only if nobody committed in the meantime.
+4. Afterwards your edits are still there, unstaged; anything you had staged is still staged, with the tool's edits added so your next commit does not undo them. A note whose edits cannot be told apart (for example a committed version without frontmatter) is left uncommitted and named in the output.
 
 **Limits, stated plainly**
 
 - **Reading is not sandboxed.** `Read`, `Glob` and `Grep` are allowed without a path pattern, so the agent can read any file the tools can reach, including notes marked `private: true`. Keep secrets out of the vault, and do not run it as a user whose files you would not show the model.
+- **The commit bypasses git hooks.** It is made with `git commit-tree`, so `pre-commit` and `commit-msg` hooks do not run and `commit.gpgSign` is not applied.
 - **A failed check is not a rollback.** It means nothing was committed. The changed files stay in your working tree, listed in the error message, for you to inspect and `git restore`.
 - Its guardrails are those of Claude Code's permission flags. Keep `claude` up to date.
 
@@ -226,7 +228,7 @@ SORT file.day DESC
 
 - ≥ 90 % branch coverage, enforced in CI (the suite is at 100 %), on Python 3.12 and 3.14.
 - End-to-end tests run both commands against a copy of the example vault with real git, fake `gh` and fake `claude`.
-- Mutation testing (`mutmut`) every Monday, non-blocking: score ≈ 98 %. Every surviving mutant is reviewed in [docs/mutation-testing.md](docs/mutation-testing.md).
+- Mutation testing (`mutmut`) every Monday, non-blocking: score ≈ 97 %. Every surviving mutant is reviewed in [docs/mutation-testing.md](docs/mutation-testing.md).
 - Static analysis with `ruff`, `mypy --strict` and `bandit`; secret scanning with `gitleaks`.
 - Dependabot opens weekly PRs into `develop` for Python packages and GitHub Actions. Actions are pinned by commit SHA.
 

@@ -29,6 +29,7 @@ runs the test suite against each change. A mutant that no test catches **survive
 | First run (2026-11-03) | 2208 | 2014 | 4 | 190 | 91.4 % |
 | After reviewing survivors | 2208 | 2160 | 4 | 44 | 98.0 % |
 | With `oab-timers` (#9) | 2630 | 2568 | 4 | 58 | 97.8 % |
+| With exact commits (#24) | 2997 | 2913 | 4 | 80 | 97.3 % |
 
 The score counts timeouts as caught: a mutant that makes the code hang is noticed.
 
@@ -49,9 +50,12 @@ For `oab-timers` (#9), 24 of its 38 first survivors were killed the same way. Fo
 `systemd-analyze verify` without `--user` must really drop the flag, because CI has no
 user session.
 
+For exact commits (#24), a path that starts with `-` must not be read as an option, so
+`--` before paths is tested; `ls-files --cached` lost its flag, which is the default anyway.
+
 ## Reviewed survivors (equivalent mutants)
 
-The 58 survivors below cannot change behaviour, so no test can kill them. The weekly job
+The 80 survivors below cannot change behaviour, so no test can kill them. The weekly job
 treats a survivor as reviewed when its name is on this page. Mutant numbers move when code
 changes, so after a refactor the job may list some of them again: review them and update
 this list.
@@ -65,16 +69,21 @@ UTF-8 on every supported platform (the C locale is coerced to UTF-8 by PEP 538 a
 obsidian_agent_backend.daily_note.x_atomic_write__mutmut_18
 obsidian_agent_backend.daily_note.x_atomic_write__mutmut_22
 obsidian_agent_backend.daily_note.x_atomic_write__mutmut_27
-obsidian_agent_backend.daily_note.xǁDailyNoteǁ_from_template__mutmut_4
-obsidian_agent_backend.daily_note.xǁDailyNoteǁ_from_template__mutmut_7
+obsidian_agent_backend.daily_note.xǁDailyNoteǁfrom_template__mutmut_4
+obsidian_agent_backend.daily_note.xǁDailyNoteǁfrom_template__mutmut_7
 obsidian_agent_backend.daily_note.xǁDailyNoteǁ_read__mutmut_5
 obsidian_agent_backend.daily_note.xǁDailyNoteǁ_read__mutmut_7
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_10
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_13
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_16
 obsidian_agent_backend.review.x_load_template__mutmut_3
 obsidian_agent_backend.review.x_load_template__mutmut_5
 obsidian_agent_backend.review.x_load_template__mutmut_6
 obsidian_agent_backend.review.x_load_template__mutmut_9
 obsidian_agent_backend.review.x_validate_report__mutmut_5
 obsidian_agent_backend.review.x_validate_report__mutmut_7
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_3
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_6
 obsidian_agent_backend.sources.xǁVaultSourceǁ_applications__mutmut_7
 obsidian_agent_backend.sources.xǁVaultSourceǁ_applications__mutmut_9
 obsidian_agent_backend.sources.xǁVaultSourceǁcollect__mutmut_10
@@ -86,6 +95,8 @@ obsidian_agent_backend.timers.x_render__mutmut_50
 obsidian_agent_backend.timers.x_verify__mutmut_10
 obsidian_agent_backend.timers.x_verify__mutmut_12
 obsidian_agent_backend.timers.x_verify__mutmut_14
+obsidian_agent_backend.tool_changes.x_daily_note_changes__mutmut_37
+obsidian_agent_backend.tool_changes.x_daily_note_changes__mutmut_39
 obsidian_agent_backend.weekly_context.xǁWeeklyContextǁ_read__mutmut_2
 obsidian_agent_backend.weekly_context.xǁWeeklyContextǁ_read__mutmut_4
 ```
@@ -97,6 +108,8 @@ On POSIX the line separator is already `\n`, so no translation happens.
 ```
 obsidian_agent_backend.daily_note.x_atomic_write__mutmut_19
 obsidian_agent_backend.daily_note.x_atomic_write__mutmut_23
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_11
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_14
 ```
 
 ### Clean-up of the temporary file: `missing_ok=False`
@@ -135,9 +148,9 @@ an unknown upper-case "option" back as an argument while still resolving the ups
 failing without one).
 
 ```
-obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_50
-obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_52
-obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_54
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_101
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_103
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_105
 ```
 
 ### Values that are overwritten or normalised before use
@@ -149,13 +162,18 @@ obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_54
   the result is `{}`.
 - `_previous`: `test=None` is falsy, like `test=False`.
 - `IsoWeek.__post_init__`: any weekday validates the same year and week number.
+- `frontmatter_lines`: `"XXXX"` has no `:`, so like `""` it yields no key.
+- `_publish`: the report's `redo` ignores its input, so its `before` is never read.
 
 ```
 obsidian_agent_backend.config.x__active_values__mutmut_9
 obsidian_agent_backend.config.x__active_values__mutmut_11
 obsidian_agent_backend.config.x_parse_config__mutmut_2
 obsidian_agent_backend.daily_note.x_read_frontmatter__mutmut_9
+obsidian_agent_backend.daily_note.x_frontmatter_lines__mutmut_11
+obsidian_agent_backend.daily_note.x_frontmatter_lines__mutmut_12
 obsidian_agent_backend.review.xǁWeeklyReviewǁ_previous__mutmut_4
+obsidian_agent_backend.review.xǁWeeklyReviewǁ_publish__mutmut_17
 obsidian_agent_backend.sources.xǁGitHubSourceǁ_search__mutmut_2
 obsidian_agent_backend.sources.xǁGitHubSourceǁ_search__mutmut_3
 obsidian_agent_backend.week.xǁIsoWeekǁ__post_init____mutmut_7
@@ -170,8 +188,8 @@ obsidian_agent_backend.week.xǁIsoWeekǁ__post_init____mutmut_7
   hashes of one day's commits do not collide.
 
 ```
-obsidian_agent_backend.review.x_changed_paths__mutmut_28
-obsidian_agent_backend.review.x_changed_paths__mutmut_33
+obsidian_agent_backend.exact_commit.x_changed_paths__mutmut_28
+obsidian_agent_backend.exact_commit.x_changed_paths__mutmut_33
 obsidian_agent_backend.sources.xǁVaultSourceǁ_git__mutmut_16
 ```
 
@@ -185,6 +203,24 @@ name `_.md` is irrelevant because the zone only looks at folder names.
 obsidian_agent_backend.sources.x_human_notes__mutmut_5
 obsidian_agent_backend.sources.x_human_notes__mutmut_13
 obsidian_agent_backend.sources.x_human_notes__mutmut_14
+```
+
+### Temporary names in `exact_commit`
+
+The blob source file and the temporary index live in a fresh private folder that is
+removed afterwards, so their names (and the folder prefix) are never seen by anyone.
+
+```
+obsidian_agent_backend.exact_commit.x_commit_exact__mutmut_12
+obsidian_agent_backend.exact_commit.x_commit_exact__mutmut_13
+obsidian_agent_backend.exact_commit.x_commit_exact__mutmut_14
+obsidian_agent_backend.exact_commit.x_commit_exact__mutmut_20
+obsidian_agent_backend.exact_commit.x_commit_exact__mutmut_21
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_1
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_2
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_3
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_7
+obsidian_agent_backend.exact_commit.x_write_blob__mutmut_8
 ```
 
 ### `oab-timers`: values that cannot differ

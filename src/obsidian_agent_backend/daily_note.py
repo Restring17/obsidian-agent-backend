@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import date
 from pathlib import Path
 
@@ -41,6 +41,22 @@ def read_frontmatter(text: str) -> dict[str, object]:
     except yaml.YAMLError:
         return {}
     return {str(key): value for key, value in data.items()} if isinstance(data, dict) else {}
+
+
+def frontmatter_lines(text: str, keys: Iterable[str]) -> dict[str, str]:
+    """The raw value of each of ``keys`` written as a one-line ``key: value``.
+
+    Keys come in the order they appear (the first occurrence wins) and the values stay
+    serialised, ready for :func:`merge_frontmatter`, which checks them.
+    """
+    wanted = set(keys)
+    match = FRONTMATTER.match(text)
+    values: dict[str, str] = {}
+    for line in ((match.group(1) or "") if match else "").splitlines():
+        found = re.fullmatch(r"([^:\s]+):[ \t]*(\S.*?)[ \t]*", line)
+        if found and found.group(1) in wanted:
+            values.setdefault(found.group(1), found.group(2))
+    return values
 
 
 def _log_section(text: str, heading: str) -> tuple[int, int] | None:
@@ -134,7 +150,8 @@ class DailyNote:
     def exists(self, day: date) -> bool:
         return self.path(day).is_file()
 
-    def _from_template(self, day: date) -> str:
+    def from_template(self, day: date) -> str:
+        """The template with its date placeholders filled in (an empty note if none)."""
         template = self._config.daily_notes.template
         if template is None:
             return EMPTY_NOTE
@@ -149,7 +166,7 @@ class DailyNote:
     def _read(self, day: date) -> str:
         path = self.path(day)
         if not path.is_file():
-            return self._from_template(day)
+            return self.from_template(day)
         try:
             return path.read_text(encoding="utf-8")
         except UnicodeError:
