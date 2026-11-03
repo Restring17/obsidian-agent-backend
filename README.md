@@ -9,6 +9,10 @@ Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: 
 - **Daily collector:** gathers exact metrics (GitHub commits, repos and PRs; vault commits; completed and open tasks) and writes them to the frontmatter of your daily note, so Dataview dashboards can query them. No LLM involved: the numbers are deterministic.
 - **Weekly review agent:** runs `claude -p` under **least privilege**. It can read notes and write exactly one file, its report, with no shell and no web access. The data is computed beforehand, so the model never invents numbers. Afterwards the tool checks with `git status` that nothing else changed and validates the report before committing it.
 
+## Configuration
+
+Copy [`oab.example.toml`](oab.example.toml) to your vault root as `oab.toml` and adjust it: daily-notes folder and template, the folders you own (*human zone*), the agent folder, timezone, manual metrics, an optional applications note and the review model. Every key has a default and paths cannot leave the vault. Both commands read `./oab.toml` (or `--config PATH`) and exit with code 2 and a one-line message if the file is invalid, for example on an unknown key or timezone.
+
 ## Status
 
 | Milestone | Goal |
