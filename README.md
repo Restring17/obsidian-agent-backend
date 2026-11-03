@@ -1,9 +1,8 @@
 # obsidian-agent-backend
 
 [![CI](https://github.com/Restring17/obsidian-agent-backend/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Restring17/obsidian-agent-backend/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Restring17/obsidian-agent-backend)](https://github.com/Restring17/obsidian-agent-backend/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-
-> 🚧 **Pre-release.** `v0.1.0` is the goal of the current sprint. Follow it on the [project board](https://github.com/users/Restring17/projects/2).
 
 Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**. You write and decide; the tooling collects the facts, keeps them structured and has an agent write a weekly review, without letting it touch your notes.
 
