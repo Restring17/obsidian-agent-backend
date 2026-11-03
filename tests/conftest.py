@@ -37,6 +37,33 @@ def isolated_git(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(f"GIT_{role}_EMAIL", "t@example.com")
 
 
+BLOCKED_AGENT_EXIT = 97
+
+
+@pytest.fixture(autouse=True)
+def no_real_agent(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+    """A ``claude`` that always fails comes first on PATH, so no test can call the model.
+
+    The tests never reach the real agent on purpose, but a mutant that disables a guard
+    (``--dry-run``, the week check) would fall through to ``claude`` on the developer's
+    PATH: a real agent spending tokens. The e2e fixture prepends its own fake later, so
+    it still wins there.
+    """
+    bin_dir = tmp_path_factory.mktemp("blocked-agent")
+    blocker = bin_dir / "claude"
+    blocker.write_text(
+        "#!/bin/sh\n"
+        "echo 'the real claude CLI is blocked in the test suite' >&2\n"
+        f"exit {BLOCKED_AGENT_EXIT}\n",
+        encoding="utf-8",
+    )
+    blocker.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+    return blocker
+
+
 @pytest.fixture
 def git() -> Git:
     """Run git in a repo with a fixed identity and no user or system config."""
