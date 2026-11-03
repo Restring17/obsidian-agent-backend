@@ -2,6 +2,8 @@
 
 This project follows a **Scrumban** workflow on GitHub with **GitFlow** branches.
 
+By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md). To report a security issue, follow [SECURITY.md](SECURITY.md) instead of opening an issue.
+
 ## Planning
 
 - **Backlog:** every piece of work is an [issue](../../issues) with a *Definition of Done*.
