@@ -11,6 +11,8 @@ Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**. 
 - **A reviewer on a short leash:** every week `oab-review` runs `claude -p`. The agent can read the vault and write **one file**, its report. Afterwards git proves that nothing else changed before anything is committed.
 - **Set and forget:** `oab-timers` schedules both commands with systemd user timers, which catch up after the PC was off.
 
+![oab-collect dry run on the example vault, then the Dataview dashboard and a weekly report in Obsidian](docs/assets/demo.gif)
+
 ## How it works
 
 ```mermaid
@@ -176,6 +178,10 @@ To pause without uninstalling, run `systemctl --user disable --now oab-collect.t
 ## Dashboards with Dataview
 
 The collected keys are plain frontmatter, so any [Dataview](https://blacksmithgu.github.io/obsidian-dataview/) query can use them. These snippets assume the folders of the example config (`Daily`, `Agents`) and its manual metric `workout_min`; adjust the names to yours.
+
+The example vault ships a ready-made [`Dashboard.md`](examples/vault/Dashboard.md), pinned to its week 2026-W44:
+
+![Dataview dashboard of the example vault: week 2026-W44 day by day, weekly totals and weekly reports](docs/assets/dashboard.png)
 
 **Last 14 days**
 
