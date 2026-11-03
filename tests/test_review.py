@@ -29,6 +29,8 @@ WEEK = IsoWeek(2026, 45)
 TODAY = date(2026, 11, 9)
 REPORT = PurePosixPath("Agents/Reports/2026-W45 Weekly review.md")
 VALID = '---\ntype: agent\nweek: 2026-W45\nsummary: "busy week"\n---\n# Review\n'
+WRONG_TYPE = "the report frontmatter must have type: agent and the right week"
+NO_SUMMARY = "the report frontmatter must have a non-empty summary"
 
 type Agent = Callable[[Sequence[str], Path | None], str]
 
@@ -61,9 +63,15 @@ def test_default_template_has_every_placeholder(tmp_path: Path) -> None:
 def test_prompt_mentions_the_previous_report() -> None:
     previous = PurePosixPath("Agents/Reports/2026-W44 Weekly review.md")
     prompt = build_prompt("$previous_report", PromptInputs(REPORT, WEEK, TODAY, previous, ""))
-    assert prompt.startswith(
-        "5. For continuity, read the previous report: `Agents/Reports/2026-W44"
+    assert prompt == (
+        "5. For continuity, read the previous report: "
+        "`Agents/Reports/2026-W44 Weekly review.md` (were its open items addressed?)."
     )
+
+
+def test_prompt_without_previous_report_leaves_the_slot_empty() -> None:
+    inputs = PromptInputs(REPORT, WEEK, TODAY, None, "")
+    assert build_prompt("[$previous_report]", inputs) == "[]"
 
 
 def test_custom_template_from_the_vault(tmp_path: Path) -> None:
@@ -103,35 +111,43 @@ def test_claude_command_is_least_privilege() -> None:
     denied = cmd[cmd.index("--disallowedTools") + 1 :]
     assert {"Bash", "WebFetch", "WebSearch"} <= set(denied)
     assert cmd[cmd.index("--model") + 1] == "sonnet"
+    assert cmd[cmd.index("--max-turns") + 1] == "40"
 
 
 def test_changed_paths_parses_porcelain_z() -> None:
     output = "\0".join(
-        [" M a b.md", "?? new.md", "R  renamed.md", "old.md", "A  x\ny.md", "!!", ""]
+        [" M a b.md", "?? new.md", "R  renamed.md", "old.md", "A  x\ny.md", "?? z", "!!", ""]
     )
 
     def runner(cmd: Sequence[str], cwd: Path | None) -> str:
         assert cmd[:4] == ["git", "status", "--porcelain", "-z"]
         return output
 
-    assert changed_paths(Path("/vault"), runner) == {"a b.md", "new.md", "renamed.md", "x\ny.md"}
+    assert changed_paths(Path("/vault"), runner) == {
+        "a b.md",
+        "new.md",
+        "renamed.md",
+        "x\ny.md",
+        "z",  # one-character names count too
+    }
 
 
 @pytest.mark.parametrize(
     ("text", "message"),
     [
-        ("---\ntype: note\nweek: 2026-W45\nsummary: x\n---\n", "type: agent and the right week"),
-        ("---\ntype: agent\nweek: 2026-W44\nsummary: x\n---\n", "type: agent and the right week"),
-        ("---\ntype: agent\nweek: 2026-W45\nsummary: '  '\n---\n", "non-empty summary"),
-        ("---\ntype: agent\nweek: 2026-W45\n---\n", "non-empty summary"),
-        ("no frontmatter", "type: agent"),
+        ("---\ntype: note\nweek: 2026-W45\nsummary: x\n---\n", WRONG_TYPE),
+        ("---\ntype: agent\nweek: 2026-W44\nsummary: x\n---\n", WRONG_TYPE),
+        ("---\ntype: agent\nweek: 2026-W45\nsummary: '  '\n---\n", NO_SUMMARY),
+        ("---\ntype: agent\nweek: 2026-W45\n---\n", NO_SUMMARY),
+        ("no frontmatter", WRONG_TYPE),
     ],
 )
 def test_validate_report_rejects_bad_frontmatter(tmp_path: Path, text: str, message: str) -> None:
     path = tmp_path / "r.md"
     path.write_text(text, encoding="utf-8")
-    with pytest.raises(ReviewError, match=message):
+    with pytest.raises(ReviewError) as exc:
         validate_report(path, WEEK)
+    assert str(exc.value) == message
 
 
 def test_validate_report_needs_the_file_and_utf8(tmp_path: Path) -> None:
@@ -228,6 +244,34 @@ def test_agent_creating_an_untracked_file_is_rejected(vault: Path) -> None:
     reviewer, _, err = make_review(vault, writer(extra={"Notes/new.md": "x"}))
     assert run_review(reviewer) == 1
     assert "outside its report: Notes/new.md" in err.getvalue()
+
+
+def test_every_file_outside_the_report_is_listed_sorted(vault: Path) -> None:
+    extra = {"Notes/new.md": "x", "Notes/a.md": "- [x] hijacked\n"}
+    reviewer, _, err = make_review(vault, writer(extra=extra))
+    assert run_review(reviewer) == 1
+    assert err.getvalue().endswith("outside its report: Notes/a.md, Notes/new.md\n")
+
+
+def test_prompt_links_the_previous_report_only_when_it_exists(vault: Path) -> None:
+    reviewer, _, _ = make_review(vault, writer())
+    assert "previous report" not in reviewer.prompt(WEEK, TODAY, REPORT)
+    previous = vault / "Agents/Reports/2026-W44 Weekly review.md"
+    previous.parent.mkdir(parents=True, exist_ok=True)
+    previous.write_text(VALID, encoding="utf-8")
+    assert "`Agents/Reports/2026-W44 Weekly review.md`" in reviewer.prompt(WEEK, TODAY, REPORT)
+
+
+def test_prompt_data_uses_the_injected_runner(vault: Path) -> None:
+    calls: list[str] = []
+
+    def recording(cmd: Sequence[str], cwd: Path | None) -> str:
+        calls.append(" ".join(cmd[:2]))
+        return run(cmd, cwd)
+
+    reviewer = WeeklyReview(make_config(vault), recording, writer(), io.StringIO(), io.StringIO())
+    reviewer.prompt(WEEK, TODAY, REPORT)
+    assert "git log" in calls
 
 
 def test_already_dirty_files_left_alone_are_fine(vault: Path, git: Git) -> None:

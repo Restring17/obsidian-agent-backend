@@ -86,8 +86,14 @@ def test_writes_metrics_from_every_source() -> None:
 def test_snapshots_only_for_today_and_yesterday() -> None:
     vault = FakeVault()
     collector, *_ = make(vault=vault)
-    collector.run([TODAY, YESTERDAY, OLD], TODAY, STAMP, dry_run=False)
-    assert vault.calls == [(TODAY, True), (YESTERDAY, True), (OLD, False)]
+    before_yesterday = date(2026, 11, 1)
+    collector.run([TODAY, YESTERDAY, before_yesterday, OLD], TODAY, STAMP, dry_run=False)
+    assert vault.calls == [
+        (TODAY, True),
+        (YESTERDAY, True),
+        (before_yesterday, False),
+        (OLD, False),
+    ]
 
 
 def test_failing_source_writes_no_fake_zeros_and_returns_1() -> None:
@@ -149,6 +155,22 @@ def test_unsafe_note_path_is_reported() -> None:
     collector, _, _, err = make(note=FakeNote(fail_exists=True))
     assert collector.run([YESTERDAY], TODAY, STAMP, dry_run=False) == EXIT_PARTIAL_FAILURE
     assert err.getvalue() == "2026-11-02: resolves outside the vault\n"
+
+
+def test_unsafe_note_path_does_not_stop_the_following_days() -> None:
+    collector, _, _, err = make(note=FakeNote(fail_exists=True))
+    assert collector.run([YESTERDAY, OLD], TODAY, STAMP, dry_run=False) == EXIT_PARTIAL_FAILURE
+    assert err.getvalue().splitlines() == [
+        "2026-11-02: resolves outside the vault",
+        "2026-10-20: resolves outside the vault",
+    ]
+
+
+def test_a_day_without_data_does_not_stop_the_following_days() -> None:
+    github = FakeGitHub(fail_on={YESTERDAY})
+    collector, note, *_ = make(github, FakeVault(fail=True))
+    assert collector.run([YESTERDAY, OLD], TODAY, STAMP, dry_run=False) == EXIT_PARTIAL_FAILURE
+    assert note.written == {OLD: ({"github_commits": 2}, STAMP)}
 
 
 def test_github_can_be_disabled() -> None:

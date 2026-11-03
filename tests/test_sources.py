@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
@@ -61,6 +62,11 @@ def test_run_reports_timeouts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(subprocess, "run", slow)
     with pytest.raises(SourceError, match="true failed: TimeoutExpired"):
         run(["true"])
+
+
+def test_run_kills_a_command_that_exceeds_the_timeout() -> None:
+    with pytest.raises(SourceError, match="failed: TimeoutExpired"):
+        run([sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.2)
 
 
 def test_run_never_uses_a_shell(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,7 +148,7 @@ def test_github_respects_the_page_limit() -> None:
 
 @pytest.mark.parametrize("login", ["", "-me", "a b", "me;rm", "x" * 40, "me\n--jq"])
 def test_github_rejects_invalid_logins(login: str) -> None:
-    with pytest.raises(SourceError, match="invalid GitHub login"):
+    with pytest.raises(SourceError, match=r"^invalid GitHub login$"):
         GitHubSource(LIMA, FakeRunner(), login=login).collect(DAY)
 
 
@@ -154,7 +160,7 @@ def test_github_unexpected_response(output: str) -> None:
 
 def test_github_commit_without_repository() -> None:
     runner = FakeRunner(page(1, [{}]), page(0, []))
-    with pytest.raises(SourceError, match="commit without repository"):
+    with pytest.raises(SourceError, match=r"^commit without repository in the response$"):
         GitHubSource(LIMA, runner, login="me").collect(DAY)
 
 
