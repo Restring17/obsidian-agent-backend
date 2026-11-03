@@ -4,7 +4,20 @@
 [![Release](https://img.shields.io/github/v/release/Restring17/obsidian-agent-backend)](https://github.com/Restring17/obsidian-agent-backend/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**. You write and decide; the tooling collects the facts, keeps them structured and has an agent write a weekly review, without letting it touch your notes.
+Turn your [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: a small database about your work and life that updates itself, and an AI agent that reviews it every week without being able to break anything.
+
+## What it is
+
+Many people want an AI assistant that knows their notes. But giving an agent write access to a vault you care about is risky: one bad run can rewrite or delete notes you wrote by hand. This project is a working pattern for doing it safely, in two layers:
+
+1. **Facts, collected without AI.** Every day a script counts what happened: commits and pull requests on GitHub (optional), commits and edited notes in the vault, completed tasks, and the habits you log by hand, such as workout or reading minutes. The numbers go into the frontmatter of that day's note. Your vault becomes a plain-Markdown database you can query and chart with [Dataview](https://blacksmithgu.github.io/obsidian-dataview/).
+2. **An agent with the smallest possible permissions.** Every week Claude reads those facts and your notes and writes one report: the week in three lines, what needs your attention, and whether last week's plan held. It can write that one file and nothing else. Afterwards git checks that nothing else changed.
+
+You keep writing your notes as usual. The tools never change what you wrote: they only add the metric keys to the daily note's frontmatter and one log line per run.
+
+**Who it is for:** people who already keep their work and life in Obsidian and are comfortable with a terminal, git and an AI command-line tool. That mostly means developers. It started as the setup of my own vault and was generalized, so anyone can adapt it with one TOML file.
+
+## Features
 
 - **Exact numbers, no LLM:** every day `oab-collect` writes GitHub and vault metrics into the frontmatter of your daily note, ready for [Dataview](https://blacksmithgu.github.io/obsidian-dataview/) dashboards.
 - **A reviewer on a short leash:** every week `oab-review` runs `claude -p`. The agent can read the vault and write **one file**, its report. Afterwards git proves that nothing else changed before anything is committed.
