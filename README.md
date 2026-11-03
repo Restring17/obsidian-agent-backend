@@ -13,6 +13,8 @@ Turn an [Obsidian](https://obsidian.md) vault into a **backend for AI agents**: 
 
 Copy [`oab.example.toml`](oab.example.toml) to your vault root as `oab.toml` and adjust it: daily-notes folder and template, the folders you own (*human zone*), the agent folder, timezone, manual metrics, an optional applications note and the review model. Every key has a default and paths cannot leave the vault. Both commands read `./oab.toml` (or `--config PATH`) and exit with code 2 and a one-line message if the file is invalid, for example on an unknown key or timezone.
 
+A fictional vault in [`examples/vault`](examples/vault) shows a working setup and is used by the end-to-end tests.
+
 ## Daily collector
 
 ```sh
@@ -71,6 +73,7 @@ Requires Python ≥ 3.12 and [uv](https://docs.astral.sh/uv/).
 ```sh
 uv sync                    # create .venv with the dev tools
 uv run pytest              # tests + branch coverage (fails under 90 %)
+uv run pytest -m e2e       # end-to-end only: examples/vault, real git, fake gh and claude
 uv run ruff check          # lint
 uv run mypy                # strict type checking
 uv run bandit -c pyproject.toml -r src
